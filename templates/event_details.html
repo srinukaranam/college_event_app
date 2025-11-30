@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Navigation -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <a href="{{ url_for('events') }}" class="btn btn-outline-primary btn-sm mb-2">
+                <i class="fas fa-arrow-left me-2"></i>Back to Events
+            </a>
+            <h1 class="h3 fw-bold text-gradient mb-0">{{ event.title }}</h1>
+        </div>
+        <div class="d-flex align-items-center">
+            <span class="badge bg-{{ 'success' if event.registered_count < event.capacity else 'danger' }} fs-6 me-3">
+                {{ event.registered_count }}/{{ event.capacity }} Registered
+            </span>
+            <span class="badge bg-primary fs-6">
+                <i class="fas fa-users me-1"></i>{{ event.registered_count }}
+            </span>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Event Details -->
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-transparent border-0 py-3">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-info-circle me-2 text-primary"></i>Event Details
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="event-description mb-4">
+                        <p class="lead">{{ event.description }}</p>
+                    </div>
+                    
+                    <div class="row g-4">
+                        <div class="col-md-6">
+                            <div class="detail-card card border-0 bg-light">
+                                <div class="card-body">
+                                    <h6 class="fw-semibold mb-3">
+                                        <i class="fas fa-calendar me-2 text-primary"></i>Date & Time
+                                    </h6>
+                                    <div class="d-flex align-items-center mb-2">
+                                        <i class="fas fa-calendar-day text-primary me-3"></i>
+                                        <div>
+                                            <div class="fw-semibold">{{ event.date }}</div>
+                                            <small class="text-muted">Event Date</small>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex align-items-center">
+                                        <i class="fas fa-clock text-primary me-3"></i>
+                                        <div>
+                                            <div class="fw-semibold">{{ event.time }}</div>
+                                            <small class="text-muted">Event Time</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="detail-card card border-0 bg-light">
+                                <div class="card-body">
+                                    <h6 class="fw-semibold mb-3">
+                                        <i class="fas fa-map-marker-alt me-2 text-success"></i>Location
+                                    </h6>
+                                    <div class="d-flex align-items-center mb-2">
+                                        <i class="fas fa-building text-success me-3"></i>
+                                        <div>
+                                            <div class="fw-semibold">{{ event.venue }}</div>
+                                            <small class="text-muted">Venue</small>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex align-items-center">
+                                        <i class="fas fa-user-tie text-success me-3"></i>
+                                        <div>
+                                            <div class="fw-semibold">{{ event.organizer }}</div>
+                                            <small class="text-muted">Organizer</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Capacity Progress -->
+                    <div class="mt-4">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="fw-semibold">Registration Progress</span>
+                            <span class="text-muted">{{ event.registered_count }}/{{ event.capacity }}</span>
+                        </div>
+                        <div class="progress" style="height: 10px;">
+                            {% set progress = (event.registered_count / event.capacity * 100) if event.capacity > 0 else 0 %}
+                            <div class="progress-bar bg-{{ 'success' if progress < 80 else 'warning' if progress < 100 else 'danger' }}" 
+                                 style="width: {{ progress }}%"
+                                 role="progressbar"
+                                 aria-valuenow="{{ progress }}"
+                                 aria-valuemin="0"
+                                 aria-valuemax="100">
+                            </div>
+                        </div>
+                        <small class="text-muted mt-1 d-block">
+                            {% if progress < 50 %}
+                                Plenty of spots available!
+                            {% elif progress < 80 %}
+                                Filling up quickly!
+                            {% elif progress < 100 %}
+                                Almost full!
+                            {% else %}
+                                Event is full
+                            {% endif %}
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Registration Panel -->
+        <div class="col-lg-4">
+            {% if registration %}
+            <!-- Already Registered -->
+            <div class="card border-0 shadow-sm bg-success bg-opacity-10">
+                <div class="card-header bg-transparent border-0 py-3">
+                    <h5 class="card-title mb-0 text-success">
+                        <i class="fas fa-check-circle me-2"></i>Registration Confirmed
+                    </h5>
+                </div>
+                <div class="card-body text-center">
+                    <div class="success-animation mb-3">
+                        <i class="fas fa-check-circle fa-3x text-success"></i>
+                    </div>
+                    <h5 class="text-success mb-3">You're Registered!</h5>
+                    <p class="text-muted mb-4">Your spot is confirmed for this event</p>
+                    
+                    {% if registration.qr_code_path %}
+                    <div class="qr-code-container mb-4">
+                        <div class="card border-0 bg-white shadow-sm">
+                            <div class="card-body text-center">
+                                <img src="{{ url_for('static', filename=registration.qr_code_path) }}" 
+                                     alt="Event QR Code" 
+                                     class="img-fluid rounded"
+                                     style="max-width: 200px;">
+                                <p class="text-muted mt-2 mb-0">
+                                    <small>Show this QR code at the event entrance</small>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <small>QR code is being generated. Please refresh the page.</small>
+                    </div>
+                    {% endif %}
+                    
+                    <div class="registration-details mt-3">
+                        <small class="text-muted">
+                            <i class="fas fa-clock me-1"></i>
+                            Registered on: {{ registration.registration_time }}
+                        </small>
+                    </div>
+                    
+                    <div class="mt-4">
+                        <a href="{{ url_for('my_registrations') }}" class="btn btn-outline-primary w-100">
+                            <i class="fas fa-ticket-alt me-2"></i>View All My Registrations
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <!-- Registration Options -->
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-transparent border-0 py-3">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-calendar-plus me-2 text-primary"></i>Join This Event
+                    </h5>
+                </div>
+                <div class="card-body text-center">
+                    {% if event.registered_count < event.capacity %}
+                    <div class="availability-status text-success mb-3">
+                        <i class="fas fa-check-circle fa-2x mb-2"></i>
+                        <h5 class="mb-1">Spots Available!</h5>
+                        <p class="text-muted mb-0">{{ event.capacity - event.registered_count }} spots remaining</p>
+                    </div>
+                    
+                    <div class="event-highlights mb-4">
+                        <div class="d-flex justify-content-around text-center">
+                            <div>
+                                <div class="text-primary fw-bold">{{ event.date.split('-')[2] }}</div>
+                                <small class="text-muted">Day</small>
+                            </div>
+                            <div>
+                                <div class="text-primary fw-bold">{{ event.time }}</div>
+                                <small class="text-muted">Time</small>
+                            </div>
+                            <div>
+                                <div class="text-primary fw-bold">{{ event.venue[:8] }}...</div>
+                                <small class="text-muted">Venue</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <a href="{{ url_for('register_event', event_id=event.id) }}" 
+                       class="btn btn-success btn-lg w-100 py-3 fw-bold">
+                        <i class="fas fa-user-plus me-2"></i>Register Now
+                    </a>
+                    
+                    <small class="text-muted mt-2 d-block">
+                        Instant confirmation • Digital pass • Free cancellation
+                    </small>
+                    {% else %}
+                    <div class="availability-status text-danger mb-3">
+                        <i class="fas fa-times-circle fa-2x mb-2"></i>
+                        <h5 class="mb-1">Event Full</h5>
+                        <p class="text-muted mb-0">This event has reached its capacity</p>
+                    </div>
+                    
+                    <div class="alert alert-warning">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <small>You can check back later for any cancellations</small>
+                    </div>
+                    
+                    <a href="{{ url_for('events') }}" class="btn btn-outline-primary w-100">
+                        <i class="fas fa-search me-2"></i>Browse Other Events
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Help Card -->
+            <div class="card border-0 shadow-sm mt-4">
+                <div class="card-header bg-transparent border-0 py-3">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-question-circle me-2 text-info"></i>Need Help?
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p class="mb-3">If you have any questions about this event, contact the organizer:</p>
+                    <div class="organizer-contact bg-light rounded p-3">
+                        <div class="d-flex align-items-center">
+                            <div class="organizer-avatar bg-primary text-white rounded-circle p-2 me-3">
+                                <i class="fas fa-user-tie"></i>
+                            </div>
+                            <div>
+                                <h6 class="mb-0 fw-semibold">{{ event.organizer }}</h6>
+                                <small class="text-muted">Event Organizer</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <small class="text-muted">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Please arrive 15 minutes early with your QR code
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

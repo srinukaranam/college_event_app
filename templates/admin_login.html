@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid py-5 bg-gradient-primary" style="min-height: 100vh;">
+    <div class="row justify-content-center align-items-center min-vh-100">
+        <div class="col-md-5 col-lg-4">
+            <div class="card border-0 shadow-lg rounded-3 overflow-hidden">
+                <!-- Header -->
+                <div class="card-header bg-gradient-primary text-white text-center py-4 border-0">
+                    <div class="avatar-lg mx-auto mb-3">
+                        <div class="avatar-title bg-white text-primary rounded-circle p-3">
+                            <i class="fas fa-lock fa-2x"></i>
+                        </div>
+                    </div>
+                    <h3 class="fw-bold mb-0">Admin Portal</h3>
+                    <p class="mb-0 opacity-75">Secure access to event management</p>
+                </div>
+                
+                <!-- Login Form -->
+                <div class="card-body p-4">
+                    <form method="POST" class="needs-validation" novalidate>
+                        <div class="mb-3">
+                            <label for="username" class="form-label fw-semibold">Username</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light border-end-0">
+                                    <i class="fas fa-user text-muted"></i>
+                                </span>
+                                <input type="text" class="form-control border-start-0" id="username" name="username" 
+                                       placeholder="Enter your username" required>
+                                <div class="invalid-feedback">
+                                    Please provide your username.
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label for="password" class="form-label fw-semibold">Password</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light border-end-0">
+                                    <i class="fas fa-key text-muted"></i>
+                                </span>
+                                <input type="password" class="form-control border-start-0" id="password" name="password" 
+                                       placeholder="Enter your password" required>
+                                <button class="btn btn-outline-secondary border-start-0" type="button" id="togglePassword">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <div class="invalid-feedback">
+                                    Please provide your password.
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg py-2 fw-bold">
+                                <i class="fas fa-sign-in-alt me-2"></i>Access Admin Panel
+                            </button>
+                        </div>
+                    </form>
+                    
+                    <!-- Additional Info -->
+                    
+                        
+                        <div class="text-center">
+                            <p class="text-muted mb-2">Student access?</p>
+                            <a href="{{ url_for('login') }}" class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-exchange-alt me-1"></i>Switch to Student Login
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Security Notice -->
+            <div class="text-center mt-4">
+                <small class="text-white opacity-75">
+                    <i class="fas fa-shield-alt me-1"></i>
+                    This is a secure admin portal. Unauthorized access is prohibited.
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2 class="mb-4">All Events</h2>
+
+{% if events %}
+<div class="row">
+    {% for event in events %}
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">{{ event.title }}</h5>
+                <p class="card-text">{{ event.description }}</p>
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item">
+                        <strong>Date:</strong> {{ event.date }} at {{ event.time }}
+                    </li>
+                    <li class="list-group-item">
+                        <strong>Venue:</strong> {{ event.venue }}
+                    </li>
+                    <li class="list-group-item">
+                        <strong>Organizer:</strong> {{ event.organizer }}
+                    </li>
+                    <li class="list-group-item">
+                        <strong>Capacity:</strong> {{ event.registered_count }}/{{ event.capacity }}
+                    </li>
+                </ul>
+            </div>
+            <div class="card-footer">
+                <a href="{{ url_for('event_details', event_id=event.id) }}" class="btn btn-primary">View Details</a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-info">
+    No events available at the moment. Please check back later.
+</div>
+{% endif %}
+{% endblock %}

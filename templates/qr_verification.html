@@ -1,0 +1,363 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2 fw-bold text-gradient mb-1">Verification Result</h1>
+            <p class="text-muted mb-0">QR code scanning and verification details</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('qr.qr_scanner') }}" class="btn btn-outline-primary">
+                <i class="fas fa-qrcode me-2"></i>Scan Another
+            </a>
+            {% if success %}
+            <button onclick="window.print()" class="btn btn-outline-info">
+                <i class="fas fa-print me-2"></i>Print
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <!-- Result Card -->
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-0">
+                    {% if success %}
+                    <!-- Success State -->
+                    <div class="alert alert-success border-0 rounded-0 rounded-top m-0">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-check-circle fa-2x me-3"></i>
+                            <div>
+                                <h4 class="alert-heading mb-1">Verification Successful!</h4>
+                                <p class="mb-0">Student registration verified and attendance recorded</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="p-4">
+                        <div class="row g-4">
+                            <!-- Student Information -->
+                            <div class="col-md-6">
+                                <div class="card border-0 bg-light">
+                                    <div class="card-header bg-transparent border-0 py-3">
+                                        <h5 class="card-title mb-0 text-primary">
+                                            <i class="fas fa-user-graduate me-2"></i>Student Information
+                                        </h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="student-info">
+                                            <div class="info-item d-flex align-items-center mb-3">
+                                                <div class="info-icon bg-primary text-white rounded-circle p-2 me-3">
+                                                    <i class="fas fa-user"></i>
+                                                </div>
+                                                <div>
+                                                    <div class="fw-semibold">{{ student.name }}</div>
+                                                    <small class="text-muted">Full Name</small>
+                                                </div>
+                                            </div>
+                                            <div class="info-item d-flex align-items-center mb-3">
+                                                <div class="info-icon bg-success text-white rounded-circle p-2 me-3">
+                                                    <i class="fas fa-id-card"></i>
+                                                </div>
+                                                <div>
+                                                    <div class="fw-semibold">{{ student.student_id }}</div>
+                                                    <small class="text-muted">Student ID</small>
+                                                </div>
+                                            </div>
+                                            <div class="info-item d-flex align-items-center mb-3">
+                                                <div class="info-icon bg-info text-white rounded-circle p-2 me-3">
+                                                    <i class="fas fa-building"></i>
+                                                </div>
+                                                <div>
+                                                    <div class="fw-semibold">{{ student.department }}</div>
+                                                    <small class="text-muted">Department</small>
+                                                </div>
+                                            </div>
+                                            <div class="info-item d-flex align-items-center">
+                                                <div class="info-icon bg-warning text-white rounded-circle p-2 me-3">
+                                                    <i class="fas fa-calendar-alt"></i>
+                                                </div>
+                                                <div>
+                                                    <div class="fw-semibold">{{ student.year }}</div>
+                                                    <small class="text-muted">Academic Year</small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Event Information -->
+                            <div class="col-md-6">
+                                <div class="card border-0 bg-light">
+                                    <div class="card-header bg-transparent border-0 py-3">
+                                        <h5 class="card-title mb-0 text-success">
+                                            <i class="fas fa-calendar-check me-2"></i>Event Information
+                                        </h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="event-info">
+                                            <div class="info-item d-flex align-items-center mb-3">
+                                                <div class="info-icon bg-success text-white rounded-circle p-2 me-3">
+                                                    <i class="fas fa-calendar-day"></i>
+                                                </div>
+                                                <div>
+                                                    <div class="fw-semibold">{{ event.title }}</div>
+                                                    <small class="text-muted">Event Title</small>
+                                                </div>
+                                            </div>
+                                            <div class="info-item d-flex align-items-center mb-3">
+                                                <div class="info-icon bg-primary text-white rounded-circle p-2 me-3">
+                                                    <i class="fas fa-clock"></i>
+                                                </div>
+                                                <div>
+                                                    <div class="fw-semibold">{{ event.date }} at {{ event.time }}</div>
+                                                    <small class="text-muted">Date & Time</small>
+                                                </div>
+                                            </div>
+                                            <div class="info-item d-flex align-items-center mb-3">
+                                                <div class="info-icon bg-info text-white rounded-circle p-2 me-3">
+                                                    <i class="fas fa-map-marker-alt"></i>
+                                                </div>
+                                                <div>
+                                                    <div class="fw-semibold">{{ event.venue }}</div>
+                                                    <small class="text-muted">Venue</small>
+                                                </div>
+                                            </div>
+                                            <div class="info-item d-flex align-items-center">
+                                                <div class="info-icon bg-warning text-white rounded-circle p-2 me-3">
+                                                    <i class="fas fa-user-tie"></i>
+                                                </div>
+                                                <div>
+                                                    <div class="fw-semibold">{{ event.organizer }}</div>
+                                                    <small class="text-muted">Organizer</small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Attendance Record -->
+                        <div class="card border-0 bg-primary bg-opacity-10 mt-4">
+                            <div class="card-header bg-transparent border-0 py-3">
+                                <h5 class="card-title mb-0 text-primary">
+                                    <i class="fas fa-clipboard-check me-2"></i>Attendance Record
+                                </h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row text-center">
+                                    <div class="col-md-3">
+                                        <div class="attendance-item">
+                                            <div class="text-primary fw-bold fs-2">{{ checkin_time.split(' ')[1] if checkin_time and ' ' in checkin_time else 'N/A' }}</div>
+                                            <small class="text-muted">Check-in Time</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="attendance-item">
+                                            <span class="badge bg-success fs-6 p-2">VERIFIED</span>
+                                            <small class="text-muted d-block mt-1">Status</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="attendance-item">
+                                            <span class="badge bg-info fs-6 p-2">ACTIVE</span>
+                                            <small class="text-muted d-block mt-1">Registration</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="attendance-item">
+                                            <i class="fas fa-check-circle text-success fa-2x"></i>
+                                            <small class="text-muted d-block mt-1">Confirmed</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <!-- Error State -->
+                    <div class="alert alert-danger border-0 rounded-0 rounded-top m-0">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-exclamation-triangle fa-2x me-3"></i>
+                            <div>
+                                <h4 class="alert-heading mb-1">Verification Failed</h4>
+                                <p class="mb-0">{{ message }}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="p-4">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <div class="card border-0 bg-light">
+                                    <div class="card-header bg-transparent border-0 py-3">
+                                        <h5 class="card-title mb-0 text-warning">
+                                            <i class="fas fa-exclamation-circle me-2"></i>Possible Issues
+                                        </h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="issues-list">
+                                            <div class="issue-item d-flex align-items-start mb-3">
+                                                <i class="fas fa-times-circle text-danger mt-1 me-3"></i>
+                                                <div>
+                                                    <strong>Invalid QR Code Format</strong>
+                                                    <p class="text-muted mb-0 small">The scanned QR code doesn't match the expected format</p>
+                                                </div>
+                                            </div>
+                                            <div class="issue-item d-flex align-items-start mb-3">
+                                                <i class="fas fa-times-circle text-danger mt-1 me-3"></i>
+                                                <div>
+                                                    <strong>Registration Not Found</strong>
+                                                    <p class="text-muted mb-0 small">Student is not registered for this event</p>
+                                                </div>
+                                            </div>
+                                            <div class="issue-item d-flex align-items-start mb-3">
+                                                <i class="fas fa-times-circle text-danger mt-1 me-3"></i>
+                                                <div>
+                                                    <strong>Event Doesn't Exist</strong>
+                                                    <p class="text-muted mb-0 small">The referenced event cannot be found</p>
+                                                </div>
+                                            </div>
+                                            <div class="issue-item d-flex align-items-start">
+                                                <i class="fas fa-times-circle text-danger mt-1 me-3"></i>
+                                                <div>
+                                                    <strong>Database Error</strong>
+                                                    <p class="text-muted mb-0 small">Temporary system issue, please try again</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card border-0 bg-warning bg-opacity-10">
+                                    <div class="card-header bg-transparent border-0 py-3">
+                                        <h6 class="card-title mb-0">
+                                            <i class="fas fa-lightbulb me-2"></i>Quick Solutions
+                                        </h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <ul class="list-unstyled small">
+                                            <li class="mb-2">✓ Rescan the QR code</li>
+                                            <li class="mb-2">✓ Check QR code quality</li>
+                                            <li class="mb-2">✓ Verify event details</li>
+                                            <li class="mb-2">✓ Contact administrator</li>
+                                            <li>✓ Use manual entry as backup</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="text-center mt-4">
+                <div class="btn-group" role="group">
+                    <a href="{{ url_for('qr.qr_scanner') }}" class="btn btn-primary btn-lg">
+                        <i class="fas fa-qrcode me-2"></i>Scan Another QR Code
+                    </a>
+                    <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-secondary btn-lg">
+                        <i class="fas fa-tachometer-alt me-2"></i>Back to Dashboard
+                    </a>
+                </div>
+            </div>
+
+            <!-- Recent Verifications Section -->
+            {% if not success and recent_verifications %}
+            <div class="card border-0 shadow-sm mt-4">
+                <div class="card-header bg-transparent border-0 py-3">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-history me-2 text-info"></i>Recent Verifications
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive-mobile">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Student</th>
+                                    <th>Student ID</th>
+                                    <th>Event</th>
+                                    <th>Check-in Time</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for verification in recent_verifications %}
+                                <tr>
+                                    <td>{{ verification.name }}</td>
+                                    <td>{{ verification.student_id }}</td>
+                                    <td>{{ verification.title }}</td>
+                                    <td>{{ verification.checkin_time }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if success %}
+            <!-- Quick Admin Actions -->
+            <div class="card border-0 shadow-sm mt-4 d-print-none">
+                <div class="card-body text-center">
+                    <h6 class="fw-semibold mb-3">Administrative Actions</h6>
+                    <div class="btn-group" role="group">
+                        <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-primary btn-sm">
+                            <i class="fas fa-tachometer-alt me-2"></i>Admin Dashboard
+                        </a>
+                        <a href="{{ url_for('admin_events') }}" class="btn btn-outline-secondary btn-sm">
+                            <i class="fas fa-calendar me-2"></i>Manage Events
+                        </a>
+                        <a href="{{ url_for('event_registrations', event_id=event.id) }}" class="btn btn-outline-info btn-sm">
+                            <i class="fas fa-list me-2"></i>View Registrations
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Print Styles -->
+<style>
+@media print {
+    .d-print-none {
+        display: none !important;
+    }
+    .btn-group {
+        display: none !important;
+    }
+    .card {
+        border: 1px solid #000 !important;
+        break-inside: avoid;
+    }
+    .alert-success {
+        border: 2px solid #198754 !important;
+        background: #d1e7dd !important;
+    }
+    body {
+        font-size: 12pt;
+        background: white !important;
+    }
+    .container-fluid {
+        padding: 0 !important;
+    }
+    .bg-light {
+        background: #f8f9fa !important;
+    }
+    .bg-opacity-10 {
+        background: rgba(0, 0, 0, 0.02) !important;
+    }
+}
+</style>
+{% endblock %}

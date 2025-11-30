@@ -1,0 +1,440 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header Section -->
+    <div class="d-flex justify-content-between align-items-center mb-5">
+        <div>
+            <h1 class="h2 fw-bold text-gradient mb-1">QR Code Scanner</h1>
+            <p class="text-muted mb-0">Verify student event registrations instantly</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-primary btn-refresh" onclick="window.location.reload()">
+                <i class="fas fa-sync-alt me-2"></i>Refresh Scanner
+            </button>
+            <a href="{{ url_for('staff_dashboard') }}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+            </a>
+        </div>
+    </div>
+
+    <!-- QR Scanner Section -->
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-transparent border-0 py-3">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-camera me-2 text-primary"></i>Camera Scanner
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="scanner-content text-center">
+                        <!-- Camera Container -->
+                        <div class="camera-container mx-auto mb-4" id="camera-container">
+                            <video id="video" autoplay playsinline class="w-100 h-100"></video>
+                            <div class="camera-overlay">
+                                <div class="scanner-frame">
+                                    <div class="scanner-line"></div>
+                                </div>
+                            </div>
+                            <canvas id="canvas" class="d-none"></canvas>
+                        </div>
+                        
+                        <!-- Scanner Controls -->
+                        <div class="scanner-controls mb-4">
+                            <button class="btn btn-primary me-2" id="start-camera">
+                                <i class="fas fa-play me-2"></i>Start Camera
+                            </button>
+                            <button class="btn btn-secondary me-2" id="stop-camera">
+                                <i class="fas fa-stop me-2"></i>Stop Camera
+                            </button>
+                            <button class="btn btn-secondary" id="switch-camera">
+                                <i class="fas fa-sync-alt me-2"></i>Switch Camera
+                            </button>
+                        </div>
+                        
+                        <!-- Sound Toggle -->
+                        <div class="sound-toggle mb-4">
+                            <div class="form-check form-switch d-inline-block">
+                                <input class="form-check-input" type="checkbox" id="sound-toggle" checked>
+                                <label class="form-check-label" for="sound-toggle">
+                                    Enable Sound
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <!-- Scanner Status -->
+                        <div class="scanner-status alert alert-info" id="status">
+                            <i class="fas fa-info-circle me-2"></i>
+                            Camera scanner ready - Click start to activate camera
+                        </div>
+                        
+                        <!-- Scan Result -->
+                        <div class="scan-result alert alert-success d-none" id="result">
+                            <h6 class="alert-heading">
+                                <i class="fas fa-check-circle me-2"></i>Scan Successful!
+                            </h6>
+                            <div id="result-text" class="mb-0"></div>
+                            <div class="mt-2">
+                                <button class="btn btn-sm btn-outline-primary" id="continue-scanning">
+                                    <i class="fas fa-camera me-1"></i>Continue Scanning
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Error Result -->
+                        <div class="scan-result alert alert-danger d-none" id="error-result">
+                            <h6 class="alert-heading">
+                                <i class="fas fa-exclamation-triangle me-2"></i>Scan Failed!
+                            </h6>
+                            <div id="error-text" class="mb-0"></div>
+                            <div class="mt-2">
+                                <button class="btn btn-sm btn-outline-primary" id="continue-after-error">
+                                    <i class="fas fa-camera me-1"></i>Continue Scanning
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Recent Scans Sidebar -->
+        <div class="col-lg-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-transparent border-0 py-3">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-history me-2 text-primary"></i>Recent Scans
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive-mobile">
+                        <table class="table table-sm table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Student</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recent-scans">
+                                <tr>
+                                    <td colspan="3" class="text-center text-muted py-3">
+                                        No scans yet
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Instructions -->
+            <div class="card border-0 shadow-sm mt-4">
+                <div class="card-header bg-transparent border-0 py-3">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-info-circle me-2 text-primary"></i>How to Use
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <ul class="list-unstyled mb-0">
+                        <li class="mb-2">
+                            <i class="fas fa-play text-success me-2"></i>
+                            Click "Start Camera" to begin
+                        </li>
+                        <li class="mb-2">
+                            <i class="fas fa-qrcode text-warning me-2"></i>
+                            Position QR code within the frame
+                        </li>
+                        <li class="mb-2">
+                            <i class="fas fa-sync-alt text-info me-2"></i>
+                            Use "Switch Camera" for front/rear camera
+                        </li>
+                        <li>
+                            <i class="fas fa-volume-up text-primary me-2"></i>
+                            Toggle sound for scan confirmation
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Include jsQR library for QR code detection -->
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const startButton = document.getElementById('start-camera');
+    const stopButton = document.getElementById('stop-camera');
+    const switchButton = document.getElementById('switch-camera');
+    const soundToggle = document.getElementById('sound-toggle');
+    const status = document.getElementById('status');
+    const result = document.getElementById('result');
+    const errorResult = document.getElementById('error-result');
+    const resultText = document.getElementById('result-text');
+    const errorText = document.getElementById('error-text');
+    const recentScans = document.getElementById('recent-scans');
+    const continueScanningBtn = document.getElementById('continue-scanning');
+    const continueAfterErrorBtn = document.getElementById('continue-after-error');
+    
+    let stream = null;
+    let currentFacingMode = 'environment';
+    let scanning = false;
+    let animationFrameId = null;
+    let lastScanTime = 0;
+    const SCAN_COOLDOWN = 2000; // 2 seconds cooldown between handling scans
+    let scanDetected = false; // prevent double-handling while processing
+
+    function createBeepSound() {
+        if (!soundToggle.checked) return;
+        try {
+            const context = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = context.createOscillator();
+            const gainNode = context.createGain();
+            oscillator.connect(gainNode);
+            gainNode.connect(context.destination);
+            oscillator.type = 'sine';
+            oscillator.frequency.value = 800;
+            gainNode.gain.value = 0.3;
+            oscillator.start();
+            gainNode.gain.exponentialRampToValueAtTime(0.00001, context.currentTime + 0.4);
+            setTimeout(() => oscillator.stop(), 450);
+        } catch (error) {
+            console.log('Audio not supported');
+        }
+    }
+
+    // Core scanning loop: continuously reads frames but only handles a code if cooldown passed and not already processing
+    function scanQRCode() {
+        if (!stream || !scanning) return;
+
+        const currentTime = Date.now();
+        if (currentTime - lastScanTime < SCAN_COOLDOWN || scanDetected) {
+            // still cooling down or already processing a detection
+            animationFrameId = requestAnimationFrame(scanQRCode);
+            return;
+        }
+
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            try {
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+                if (code) {
+                    // mark detection to avoid duplicate handling
+                    scanDetected = true;
+                    lastScanTime = Date.now();
+                    createBeepSound();
+                    handleDetectedCode(code.data);
+                    // continue the loop but we will ignore further detections until cooldown / processing complete
+                    animationFrameId = requestAnimationFrame(scanQRCode);
+                    return;
+                }
+            } catch (err) {
+                // occasionally getImageData can throw (cross-origin or zero-sized). ignore and continue.
+                console.warn('frame read warning', err);
+            }
+        }
+
+        animationFrameId = requestAnimationFrame(scanQRCode);
+    }
+
+    // handleDetectedCode: send to server and update UI - DOES NOT STOP camera
+    function handleDetectedCode(qrData) {
+        // Show a transient processing status
+        status.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing QR...';
+        status.className = 'alert alert-info';
+
+        fetch('{{ url_for("staff_verify") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ qr_data: qrData })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                resultText.innerHTML = `
+                    <strong>Student ID:</strong> ${data.student.student_id}<br>
+                    <strong>Name:</strong> ${data.student.name}<br>
+                    <strong>Department:</strong> ${data.student.department}<br>
+                    <strong>Year:</strong> ${data.student.year}<br>
+                    <strong>Event:</strong> ${data.event.title}<br>
+                    <strong>Check-in Time:</strong> ${data.checkin_time}<br>
+                    <strong>Status:</strong> <span class="badge bg-success">Verified</span>
+                `;
+                result.classList.remove('d-none');
+                errorResult.classList.add('d-none');
+
+                status.innerHTML = '<i class="fas fa-check-circle me-2"></i>QR Code verified.';
+                status.className = 'alert alert-success';
+
+                // Add to recent scans table
+                const now = new Date();
+                const timeString = now.getHours() + ':' + (now.getMinutes() < 10 ? '0' : '') + now.getMinutes();
+                if (recentScans.querySelector('td[colspan]')) recentScans.innerHTML = '';
+                const newRow = document.createElement('tr');
+                newRow.innerHTML = `<td>${timeString}</td><td>${data.student.name}</td><td><span class="badge bg-success">Verified</span></td>`;
+                recentScans.insertBefore(newRow, recentScans.firstChild);
+
+            } else {
+                errorText.innerHTML = data.message || 'Verification failed';
+                errorResult.classList.remove('d-none');
+                result.classList.add('d-none');
+
+                status.innerHTML = '<i class="fas fa-exclamation-triangle me-2"></i>Verification failed';
+                status.className = 'alert alert-danger';
+            }
+        })
+        .catch(error => {
+            console.error('Network error:', error);
+            errorText.innerHTML = 'Network error occurred. Please try again.';
+            errorResult.classList.remove('d-none');
+            result.classList.add('d-none');
+
+            status.innerHTML = '<i class="fas fa-exclamation-triangle me-2"></i>Network error';
+            status.className = 'alert alert-danger';
+        })
+        .finally(() => {
+            // keep camera running; release processing lock after cooldown
+            setTimeout(() => {
+                scanDetected = false; // allow next detections
+                // auto-hide result but keep a visible cue; user can re-open if needed
+                // don't clear result immediately — let user click Continue or it will auto-hide
+            }, SCAN_COOLDOWN + 200);
+        });
+    }
+
+    function continueScanning() {
+        result.classList.add('d-none');
+        errorResult.classList.add('d-none');
+        status.innerHTML = '<i class="fas fa-check-circle me-2"></i>Camera active - Position QR code in frame';
+        status.className = 'alert alert-success';
+        // ensure scanning true and resume loop
+        if (!scanning) {
+            scanning = true;
+        }
+        if (!animationFrameId) {
+            scanQRCode();
+        }
+    }
+
+    // Start camera function
+    async function startCamera() {
+        try {
+            status.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Initializing camera...';
+            status.className = 'alert alert-info';
+
+            if (stream) {
+                // if there's already a stream, leave it running but restart scanning
+                if (!scanning) {
+                    scanning = true;
+                    scanQRCode();
+                }
+                return;
+            }
+
+            const constraints = {
+                video: {
+                    facingMode: currentFacingMode,
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            };
+
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = stream;
+            // update UI
+            startButton.disabled = true;
+            stopButton.disabled = false;
+            switchButton.disabled = false;
+            scanning = true;
+            scanQRCode();
+            status.innerHTML = '<i class="fas fa-check-circle me-2"></i>Camera active - Position QR code in frame';
+            status.className = 'alert alert-success';
+        } catch (error) {
+            console.error('Error accessing camera:', error);
+            let errorMessage = 'Could not access camera. ';
+            if (error.name === 'NotAllowedError') {
+                errorMessage += 'Camera permission denied. Please allow camera access and try again.';
+            } else if (error.name === 'NotFoundError') {
+                errorMessage += 'No camera found on this device.';
+            } else {
+                errorMessage += 'Please check camera permissions and try again.';
+            }
+            status.innerHTML = `<i class="fas fa-exclamation-triangle me-2"></i>${errorMessage}`;
+            status.className = 'alert alert-danger';
+        }
+    }
+
+    // Stop camera (explicit user stop) - still stops the stream
+    function stopCamera() {
+        scanning = false;
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+        }
+        if (stream) {
+            const tracks = stream.getTracks();
+            tracks.forEach(track => track.stop());
+            video.srcObject = null;
+            stream = null;
+        }
+        result.classList.add('d-none');
+        errorResult.classList.add('d-none');
+        status.innerHTML = '<i class="fas fa-info-circle me-2"></i>Camera stopped';
+        status.className = 'alert alert-warning';
+        startButton.disabled = false;
+        stopButton.disabled = true;
+        switchButton.disabled = true;
+        scanDetected = false;
+    }
+
+    function switchCamera() {
+        // toggle facing mode and restart stream if running
+        currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+        if (stream) {
+            // restart stream with new facing mode
+            stopCamera();
+            setTimeout(startCamera, 300);
+        }
+    }
+
+    // Event listeners
+    startButton.addEventListener('click', startCamera);
+    stopButton.addEventListener('click', stopCamera);
+    switchButton.addEventListener('click', switchCamera);
+    continueScanningBtn.addEventListener('click', continueScanning);
+    continueAfterErrorBtn.addEventListener('click', continueScanning);
+
+    // initial UI
+    stopButton.disabled = true;
+    switchButton.disabled = true;
+
+    // cleanup on page unload
+    window.addEventListener('beforeunload', stopCamera);
+});
+</script>
+
+<style>
+/* same styles as before */
+.camera-container { position: relative; width: 100%; max-width: 500px; height: 350px; background-color: #111; border-radius: 10px; overflow: hidden; margin: 0 auto; }
+#video { width: 100%; height: 100%; object-fit: cover; }
+.camera-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+.scanner-frame { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 220px; height: 220px; border: 2px solid #fdbb2d; border-radius: 10px; box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.5); }
+.scanner-line { position: absolute; width: 100%; height: 2px; background-color: #fdbb2d; top: 0; animation: scan 2s linear infinite; }
+@keyframes scan { 0% { top: 0; } 50% { top: 100%; } 100% { top: 0; } }
+.scanner-controls { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+@media (max-width: 768px) { .camera-container { height: 250px; } .scanner-frame { width: 180px; height: 180px; } .scanner-controls { flex-direction: column; align-items: center; } .scanner-controls .btn { width: 200px; } }
+</style>
+{% endblock %}

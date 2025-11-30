@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Staff Dashboard - QR Scanner</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet"/>
+    <style>
+        body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .navbar-brand { font-weight: bold; }
+        .scanner-container { background: white; border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); overflow: hidden; }
+        .camera-container { position: relative; width: 100%; height: 400px; background: #000; border-radius: 10px; overflow: hidden; }
+        #video { width: 100%; height: 100%; object-fit: cover; }
+        .scanner-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        .scanner-frame { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 250px; height: 250px; border: 3px solid #fdbb2d; border-radius: 15px; box-shadow: 0 0 0 1000px rgba(0,0,0,0.5); }
+        .scanner-line { position: absolute; width: 100%; height: 3px; background: #fdbb2d; top: 0; animation: scan 2s linear infinite; }
+        @keyframes scan { 0%{ top:0; } 50%{ top:100%; } 100%{ top:0; } }
+        .stats-card { background: linear-gradient(135deg, #1a2a6c, #b21f1f); color: white; border-radius: 10px; }
+        .recent-scans { max-height: 400px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="#"><i class="fas fa-qrcode me-2"></i>Staff Scanner</a>
+            <div class="navbar-nav ms-auto">
+                <span class="navbar-text me-3"><i class="fas fa-user me-1"></i> {{ session.staff_name }}</span>
+                <a class="nav-link" href="{{ url_for('staff_logout') }}"><i class="fas fa-sign-out-alt me-1"></i>Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid py-4">
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="scanner-container p-4 mb-4">
+                    <h3 class="mb-4"><i class="fas fa-camera text-primary me-2"></i>QR Code Scanner</h3>
+                    <div class="camera-container mb-4">
+                        <video id="video" autoplay playsinline></video>
+                        <div class="scanner-overlay">
+                            <div class="scanner-frame"><div class="scanner-line"></div></div>
+                        </div>
+                        <canvas id="canvas" class="d-none"></canvas>
+                    </div>
+
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <div class="d-grid gap-2">
+                                <button class="btn btn-primary" id="start-camera"><i class="fas fa-play me-2"></i>Start Camera</button>
+                                <button class="btn btn-secondary" id="stop-camera"><i class="fas fa-stop me-2"></i>Stop Camera</button>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="sound-toggle" checked>
+                                <label class="form-check-label" for="sound-toggle"><i class="fas fa-volume-up me-1"></i>Enable Sound</label>
+                            </div>
+                            <button class="btn btn-outline-primary w-100" id="switch-camera"><i class="fas fa-sync-alt me-2"></i>Switch Camera</button>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info" id="status"><i class="fas fa-info-circle me-2"></i>Ready to scan - Click Start Camera to begin</div>
+
+                    <div class="alert alert-success d-none" id="success-result"><h5><i class="fas fa-check-circle me-2"></i>Scan Successful!</h5><div id="success-content"></div></div>
+                    <div class="alert alert-danger d-none" id="error-result"><h5><i class="fas fa-exclamation-triangle me-2"></i>Scan Failed</h5><div id="error-content"></div></div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <div class="stats-card p-4 mb-4">
+                    <h5 class="mb-3"><i class="fas fa-chart-bar me-2"></i>Today's Activity</h5>
+                    <div class="row text-center">
+                        <div class="col-6"><h3 id="scans-today">0</h3><small>Scans Today</small></div>
+                        <div class="col-6"><h3 id="verified-today">0</h3><small>Verified</small></div>
+                    </div>
+                </div>
+
+                <div class="scanner-container p-4">
+                    <h5 class="mb-3"><i class="fas fa-history me-2"></i>Recent Scans</h5>
+                    <div class="recent-scans" id="recent-scans"><div class="text-center text-muted py-4"><i class="fas fa-qrcode fa-2x mb-2"></i><p>No scans yet</p></div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const startButton = document.getElementById('start-camera');
+        const stopButton = document.getElementById('stop-camera');
+        const switchButton = document.getElementById('switch-camera');
+        const soundToggle = document.getElementById('sound-toggle');
+        const status = document.getElementById('status');
+        const successResult = document.getElementById('success-result');
+        const errorResult = document.getElementById('error-result');
+        const successContent = document.getElementById('success-content');
+        const errorContent = document.getElementById('error-content');
+        const recentScans = document.getElementById('recent-scans');
+        const scansToday = document.getElementById('scans-today');
+        const verifiedToday = document.getElementById('verified-today');
+
+        let stream = null;
+        let currentFacingMode = 'environment';
+        let scanning = false;
+        let animationFrameId = null;
+        let scanCount = 0;
+        let verifiedCount = 0;
+
+        const SCAN_COOLDOWN = 2000;
+        let lastScanTime = 0;
+        let scanDetected = false;
+
+        function createBeepSound() {
+            if (!soundToggle.checked) return;
+            try {
+                const context = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = context.createOscillator();
+                const gainNode = context.createGain();
+                oscillator.connect(gainNode);
+                gainNode.connect(context.destination);
+                oscillator.type = 'sine';
+                oscillator.frequency.value = 800;
+                gainNode.gain.value = 0.3;
+                oscillator.start();
+                gainNode.gain.exponentialRampToValueAtTime(0.00001, context.currentTime + 0.4);
+                setTimeout(() => oscillator.stop(), 450);
+            } catch (error) {
+                console.log('Audio not supported');
+            }
+        }
+
+        function scanQRCode() {
+            if (!stream || !scanning) return;
+
+            const now = Date.now();
+            if (now - lastScanTime < SCAN_COOLDOWN || scanDetected) {
+                animationFrameId = requestAnimationFrame(scanQRCode);
+                return;
+            }
+
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                try {
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const code = jsQR(imageData.data, imageData.width, imageData.height);
+                    if (code) {
+                        lastScanTime = Date.now();
+                        scanDetected = true;
+                        createBeepSound();
+                        processQRCode(code.data);
+                        animationFrameId = requestAnimationFrame(scanQRCode);
+                        return;
+                    }
+                } catch (err) {
+                    console.warn('frame read warning', err);
+                }
+            }
+
+            animationFrameId = requestAnimationFrame(scanQRCode);
+        }
+
+        function processQRCode(qrData) {
+            // do NOT stop camera. Just update counts and UI. server call below.
+            scanCount++;
+            scansToday.textContent = scanCount;
+
+            status.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing QR...';
+            status.className = 'alert alert-info';
+
+            fetch('{{ url_for("staff_verify") }}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ qr_data: qrData })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    verifiedCount++;
+                    verifiedToday.textContent = verifiedCount;
+                    successContent.innerHTML = `
+                        <div class="row">
+                            <div class="col-6">
+                                <strong>Student ID:</strong><br>
+                                <strong>Name:</strong><br>
+                                <strong>Event:</strong><br>
+                                <strong>Time:</strong>
+                            </div>
+                            <div class="col-6">
+                                ${data.student.student_id}<br>
+                                ${data.student.name}<br>
+                                ${data.event.title}<br>
+                                ${new Date().toLocaleTimeString()}
+                            </div>
+                        </div>
+                    `;
+                    successResult.classList.remove('d-none');
+                    errorResult.classList.add('d-none');
+
+                    status.innerHTML = '<i class="fas fa-check-circle me-2"></i>Student verified successfully!';
+                    status.className = 'alert alert-success';
+
+                    addToRecentScans(data.student.name, data.event.title, true);
+                } else {
+                    errorContent.textContent = data.message || 'Verification failed';
+                    errorResult.classList.remove('d-none');
+                    successResult.classList.add('d-none');
+
+                    status.innerHTML = '<i class="fas fa-exclamation-triangle me-2"></i>Verification failed!';
+                    status.className = 'alert alert-danger';
+
+                    addToRecentScans('Unknown', 'Failed Scan', false);
+                }
+            })
+            .catch(err => {
+                console.error('Network error', err);
+                errorContent.textContent = 'Network error. Please try again.';
+                errorResult.classList.remove('d-none');
+                successResult.classList.add('d-none');
+
+                status.innerHTML = '<i class="fas fa-exclamation-triangle me-2"></i>Network error!';
+                status.className = 'alert alert-danger';
+
+                addToRecentScans('Error', 'Network Issue', false);
+            })
+            .finally(() => {
+                // release detection lock after cooldown
+                setTimeout(() => {
+                    scanDetected = false;
+                }, SCAN_COOLDOWN + 200);
+            });
+        }
+
+        function addToRecentScans(studentName, eventName, success) {
+            if (recentScans.querySelector('.text-muted')) recentScans.innerHTML = '';
+            const scanItem = document.createElement('div');
+            scanItem.className = `border-bottom pb-2 mb-2 ${success ? 'border-success' : 'border-danger'}`;
+            scanItem.innerHTML = `
+                <div class="d-flex justify-content-between align-items-start">
+                    <div><strong>${studentName}</strong><br><small class="text-muted">${eventName}</small></div>
+                    <div class="text-end"><span class="badge bg-${success ? 'success' : 'danger'}">${success ? 'Verified' : 'Failed'}</span><br><small>${new Date().toLocaleTimeString()}</small></div>
+                </div>
+            `;
+            recentScans.insertBefore(scanItem, recentScans.firstChild);
+        }
+
+        async function startCamera() {
+            try {
+                status.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Starting camera...';
+                status.className = 'alert alert-info';
+                if (stream) {
+                    if (!scanning) { scanning = true; scanQRCode(); }
+                    return;
+                }
+                const constraints = { video: { facingMode: currentFacingMode, width: { ideal: 1280 }, height: { ideal: 720 } } };
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                startButton.disabled = true;
+                stopButton.disabled = false;
+                switchButton.disabled = false;
+                scanning = true;
+                scanQRCode();
+                status.innerHTML = '<i class="fas fa-check-circle me-2"></i>Camera active - Scan QR code';
+                status.className = 'alert alert-success';
+            } catch (error) {
+                console.error('Camera error', error);
+                let errorMessage = 'Camera access failed. ';
+                if (error.name === 'NotAllowedError') errorMessage += 'Please allow camera permissions.';
+                else if (error.name === 'NotFoundError') errorMessage += 'No camera found.';
+                else errorMessage += 'Please try again.';
+                status.innerHTML = `<i class="fas fa-exclamation-triangle me-2"></i>${errorMessage}`;
+                status.className = 'alert alert-danger';
+            }
+        }
+
+        function stopCamera() {
+            scanning = false;
+            if (animationFrameId) { cancelAnimationFrame(animationFrameId); animationFrameId = null; }
+            if (stream) {
+                stream.getTracks().forEach(t => t.stop());
+                video.srcObject = null;
+                stream = null;
+            }
+            status.innerHTML = '<i class="fas fa-info-circle me-2"></i>Camera stopped';
+            status.className = 'alert alert-warning';
+            startButton.disabled = false;
+            stopButton.disabled = true;
+            switchButton.disabled = true;
+            scanDetected = false;
+        }
+
+        function switchCamera() {
+            currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+            if (stream) {
+                stopCamera();
+                setTimeout(startCamera, 300);
+            }
+        }
+
+        startButton.addEventListener('click', startCamera);
+        stopButton.addEventListener('click', stopCamera);
+        switchButton.addEventListener('click', switchCamera);
+
+        stopButton.disabled = true;
+        switchButton.disabled = true;
+
+        window.addEventListener('beforeunload', stopCamera);
+    });
+    </script>
+</body>
+</html>

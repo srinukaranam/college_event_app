@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <!-- Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h1 class="h2 fw-bold text-gradient mb-1">
+                        {% if event %}Edit Event{% else %}Create New Event{% endif %}
+                    </h1>
+                    <p class="text-muted mb-0">
+                        {% if event %}
+                        Update event details and settings
+                        {% else %}
+                        Fill in the details to create a new event
+                        {% endif %}
+                    </p>
+                </div>
+                <a href="{{ url_for('admin_events') }}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>Back to Events
+                </a>
+            </div>
+
+            <!-- Event Form -->
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-transparent border-0 py-3">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-{{ 'edit' if event else 'plus-circle' }} me-2 text-{{ 'primary' if event else 'success' }}"></i>
+                        Event Details
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" class="needs-validation" novalidate>
+                        <!-- Basic Information -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <label for="title" class="form-label fw-semibold">Event Title <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="title" name="title" 
+                                       value="{{ event.title if event }}" 
+                                       placeholder="Enter event title" required>
+                                <div class="invalid-feedback">
+                                    Please provide an event title.
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="organizer" class="form-label fw-semibold">Organizer <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="organizer" name="organizer" 
+                                       value="{{ event.organizer if event }}"
+                                       placeholder="Enter organizer name" required>
+                                <div class="invalid-feedback">
+                                    Please provide an organizer name.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Description -->
+                        <div class="mb-4">
+                            <label for="description" class="form-label fw-semibold">Description <span class="text-danger">*</span></label>
+                            <textarea class="form-control" id="description" name="description" rows="4" 
+                                      placeholder="Describe the event, including objectives, agenda, and any special requirements..."
+                                      required>{{ event.description if event }}</textarea>
+                            <div class="form-text">Provide a clear and engaging description to attract participants.</div>
+                            <div class="invalid-feedback">
+                                Please provide an event description.
+                            </div>
+                        </div>
+
+                        <!-- Date and Time -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <label for="date" class="form-label fw-semibold">Event Date <span class="text-danger">*</span></label>
+                                <input type="date" class="form-control" id="date" name="date" 
+                                       value="{{ event.date if event }}" required>
+                                <div class="invalid-feedback">
+                                    Please select an event date.
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="time" class="form-label fw-semibold">Event Time <span class="text-danger">*</span></label>
+                                <input type="time" class="form-control" id="time" name="time" 
+                                       value="{{ event.time if event }}" required>
+                                <div class="invalid-feedback">
+                                    Please select an event time.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Venue and Capacity -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-8">
+                                <label for="venue" class="form-label fw-semibold">Venue <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="venue" name="venue" 
+                                       value="{{ event.venue if event }}"
+                                       placeholder="Enter event venue location" required>
+                                <div class="invalid-feedback">
+                                    Please provide a venue location.
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="capacity" class="form-label fw-semibold">Capacity <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" id="capacity" name="capacity" 
+                                       value="{{ event.capacity if event else 50 }}" 
+                                       min="1" max="1000" required>
+                                <div class="form-text">Maximum number of participants</div>
+                                <div class="invalid-feedback">
+                                    Please provide a valid capacity.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Additional Settings -->
+                        <div class="card bg-light border-0 mb-4">
+                            <div class="card-body">
+                                <h6 class="fw-semibold mb-3">
+                                    <i class="fas fa-cog me-2 text-muted"></i>Additional Settings
+                                </h6>
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label for="category" class="form-label fw-semibold">Category</label>
+                                        <select class="form-select" id="category" name="category">
+                                            <option value="">Select Category</option>
+                                            <option value="technical">Technical</option>
+                                            <option value="cultural">Cultural</option>
+                                            <option value="sports">Sports</option>
+                                            <option value="workshop">Workshop</option>
+                                            <option value="seminar">Seminar</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">Registration Type</label>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="radio" name="registration_type" id="open" value="open" checked>
+                                            <label class="form-check-label" for="open">
+                                                Open Registration
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="radio" name="registration_type" id="approval" value="approval">
+                                            <label class="form-check-label" for="approval">
+                                                Requires Approval
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="d-flex justify-content-between align-items-center pt-3 border-top">
+                            <a href="{{ url_for('admin_events') }}" class="btn btn-outline-secondary">
+                                <i class="fas fa-times me-2"></i>Cancel
+                            </a>
+                            <button type="submit" class="btn btn-{{ 'primary' if event else 'success' }} btn-lg px-4">
+                                <i class="fas fa-{{ 'save' if event else 'plus' }} me-2"></i>
+                                {% if event %}Update Event{% else %}Create Event{% endif %}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Set minimum date to today
+    const dateInput = document.getElementById('date');
+    if (dateInput) {
+        dateInput.min = new Date().toISOString().split('T')[0];
+    }
+
+    // Form validation
+    const form = document.querySelector('form');
+    form.addEventListener('submit', function(e) {
+        if (!form.checkValidity()) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        form.classList.add('was-validated');
+    });
+
+    // Character counter for description
+    const description = document.getElementById('description');
+    if (description) {
+        const counter = document.createElement('div');
+        counter.className = 'form-text text-end';
+        counter.textContent = `${description.value.length}/500 characters`;
+        
+        description.parentNode.appendChild(counter);
+        
+        description.addEventListener('input', function() {
+            counter.textContent = `${this.value.length}/500 characters`;
+            if (this.value.length > 500) {
+                counter.classList.add('text-danger');
+            } else {
+                counter.classList.remove('text-danger');
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

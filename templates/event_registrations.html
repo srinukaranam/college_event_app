@@ -1,0 +1,310 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2 fw-bold text-gradient mb-1">Event Registrations</h1>
+            <p class="text-muted mb-0">Manage registrations for <strong>{{ event.title }}</strong></p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('admin_events') }}" class="btn btn-outline-primary"><i class="fas fa-arrow-left me-2"></i>Back to Events</a>
+            <button class="btn btn-primary" onclick="window.print()"><i class="fas fa-print me-2"></i>Print List</button>
+        </div>
+    </div>
+
+    <!-- Summary -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3 text-center">
+                    <div class="fs-3 fw-bold">{{ registrations|length }}</div>
+                    <small class="text-muted">Total Registrations</small>
+                </div>
+                <div class="col-md-3 text-center">
+                    <div class="fs-3 fw-bold">{{ registrations|selectattr('attended')|list|length }}</div>
+                    <small class="text-muted">Attended</small>
+                </div>
+                <div class="col-md-3 text-center">
+                    <div class="fs-3 fw-bold">{{ registrations|rejectattr('attended')|list|length }}</div>
+                    <small class="text-muted">Pending</small>
+                </div>
+                <div class="col-md-3 text-center">
+                    <div class="fs-3 fw-bold">{{ event.capacity - registrations|length }}</div>
+                    <small class="text-muted">Available Spots</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if registrations %}
+    <div class="card border-0 shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center bg-transparent border-0 py-3">
+            <h5 class="mb-0"><i class="fas fa-list me-2 text-primary"></i>Registration List <span class="badge bg-primary rounded-pill">{{ registrations|length }}</span></h5>
+            <div class="d-flex gap-2">
+                <input id="searchRegistrations" class="form-control form-control-sm" placeholder="Search registrations..." style="width: 220px;">
+                <select id="filterAttendance" class="form-select form-select-sm" style="width: 150px;">
+                    <option value="">All Attendance</option>
+                    <option value="attended">Attended</option>
+                    <option value="not-attended">Not Attended</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="card-body p-0">
+            <div class="table-responsive-mobile">
+                <table class="table table-hover align-middle mb-0" id="registrationsTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-4">Student</th>
+                            <th>Academic</th>
+                            <th>Registration Time</th>
+                            <th class="text-center">Attendance</th>
+                            <th class="text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for reg in registrations %}
+                        <tr class="registration-row" data-attended="{{ 'true' if reg.attended else 'false' }}" data-student-id="{{ reg.student_id }}">
+                            <td class="ps-4">
+                                <div class="d-flex align-items-start">
+                                    <div class="student-avatar bg-primary bg-opacity-10 text-primary rounded-2 p-2 me-3">
+                                        <i class="fas fa-user-graduate"></i>
+                                    </div>
+                                    <div>
+                                        <h6 class="mb-1 fw-semibold">{{ reg.name }}</h6>
+                                        <p class="text-muted small mb-0"><i class="fas fa-id-card me-1"></i>{{ reg.student_id }}</p>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <div>
+                                    <span class="badge bg-secondary mb-1">{{ reg.department }}</span>
+                                    <span class="badge bg-info">{{ reg.year }}</span>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="text-nowrap">
+                                    <div class="fw-semibold">{{ reg.registration_time.split(' ')[0] }}</div>
+                                    <small class="text-muted">{{ reg.registration_time.split(' ')[1] if reg.registration_time.split(' ')|length > 1 else '' }}</small>
+                                </div>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-{{ 'success' if reg.attended else 'warning' }} rounded-pill py-2 px-3 attendance-badge">
+                                    <i class="fas fa-{{ 'check' if reg.attended else 'clock' }} me-1"></i>
+                                    {{ 'Attended' if reg.attended else 'Pending' }}
+                                </span>
+                            </td>
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-success" data-bs-toggle="tooltip" title="Mark as Attended" onclick="setAttendance('{{ reg.student_id }}', {{ event.id }}, true, this)">
+                                        <i class="fas fa-check"></i>
+                                    </button>
+                                    <button class="btn btn-outline-warning" data-bs-toggle="tooltip" title="Mark as Not Attended" onclick="setAttendance('{{ reg.student_id }}', {{ event.id }}, false, this)">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Options -->
+    <div class="card border-0 shadow-sm mt-4">
+        <div class="card-body text-center">
+            <h6 class="fw-semibold mb-3">Export Registration Data</h6>
+
+            <div class="d-flex justify-content-center gap-2 align-items-center mb-2">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="attendanceOnlyToggle">
+                    <label class="form-check-label small" for="attendanceOnlyToggle">Attendance-only</label>
+                </div>
+                <small class="text-muted">Only include students who have checked in</small>
+            </div>
+
+            <div class="d-flex justify-content-center gap-2">
+                <button class="btn btn-outline-primary" onclick="downloadExport('{{ event.id }}', 'excel')">
+                    <i class="fas fa-file-excel me-2"></i>Export to Excel
+                </button>
+                <button class="btn btn-outline-secondary" onclick="downloadExport('{{ event.id }}', 'pdf')">
+                    <i class="fas fa-file-pdf me-2"></i>Export to PDF
+                </button>
+                <button class="btn btn-outline-info" onclick="downloadExport('{{ event.id }}', 'csv')">
+                    <i class="fas fa-file-csv me-2"></i>Export to CSV
+                </button>
+            </div>
+        </div>
+    </div>
+
+    {% else %}
+    <div class="card border-0 shadow-sm">
+        <div class="card-body text-center py-5">
+            <i class="fas fa-users-slash fa-4x text-muted mb-3"></i>
+            <h4 class="text-muted">No Registrations Yet</h4>
+            <p class="text-muted mb-4">No students have registered for this event yet.</p>
+            <div class="d-flex justify-content-center gap-2">
+                <a href="{{ url_for('admin_events') }}" class="btn btn-outline-primary"><i class="fas fa-arrow-left me-2"></i>Back</a>
+                <a href="{{ url_for('edit_event', event_id=event.id) }}" class="btn btn-primary"><i class="fas fa-edit me-2"></i>Edit Event</a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Download Modal (shared with dashboard) -->
+<div class="modal fade" id="exportProgressModal" tabindex="-1" aria-labelledby="exportProgressModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Preparing download</h5>
+            </div>
+            <div class="modal-body text-center">
+                <div class="spinner-border text-primary mb-3" role="status"></div>
+                <p id="exportProgressText">Preparing your export...</p>
+                <div class="progress">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" id="exportProgressBar" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Tooltips
+    const tts = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+    tts.forEach(t => new bootstrap.Tooltip(t));
+
+    // Search
+    const searchInput = document.getElementById('searchRegistrations');
+    const rows = document.querySelectorAll('.registration-row');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            const q = this.value.trim().toLowerCase();
+            rows.forEach(r => r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none');
+        });
+    }
+
+    // Attendance filter
+    const filter = document.getElementById('filterAttendance');
+    if (filter) {
+        filter.addEventListener('change', function() {
+            const v = this.value;
+            rows.forEach(r => {
+                const attended = r.dataset.attended === 'true';
+                if (!v) { r.style.display = ''; }
+                else if (v === 'attended' && attended) { r.style.display = ''; }
+                else if (v === 'not-attended' && !attended) { r.style.display = ''; }
+                else { r.style.display = 'none'; }
+            });
+        });
+    }
+});
+
+// Set attendance (AJAX) and update UI row
+function setAttendance(studentId, eventId, attended, btn) {
+    const payload = { student_id: studentId, event_id: eventId, attended: attended };
+    fetch('/admin/mark_attendance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    }).then(r => r.json())
+      .then(res => {
+          if (res.success) {
+              // update UI
+              const row = btn.closest('tr');
+              if (row) {
+                  row.dataset.attended = attended ? 'true' : 'false';
+                  const badge = row.querySelector('.attendance-badge');
+                  if (badge) {
+                      badge.className = 'badge rounded-pill py-2 px-3 ' + (attended ? 'bg-success' : 'bg-warning') + ' attendance-badge';
+                      badge.innerHTML = `<i class="fas fa-${attended ? 'check' : 'clock'} me-1"></i>${attended ? 'Attended' : 'Pending'}`;
+                  }
+                  showToast('Attendance updated', 'success');
+              }
+          } else {
+              showToast(res.message || 'Failed to update', 'danger');
+          }
+      }).catch(err => {
+          console.error(err);
+          showToast('Error updating attendance', 'danger');
+      });
+}
+
+function showToast(message, type) {
+    const toast = document.createElement('div');
+    toast.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 200px;';
+    toast.innerHTML = `${message} <button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+}
+
+// Download helper using fetch -> blob, with modal progress simulation
+function downloadExport(eventId, format) {
+    const attendanceOnly = document.getElementById('attendanceOnlyToggle').checked;
+    const url = `/admin/event_registrations_export/${eventId}?format=${format}${attendanceOnly ? '&attendance_only=1' : ''}`;
+
+    // Show modal
+    const modalEl = document.getElementById('exportProgressModal');
+    const modal = new bootstrap.Modal(modalEl);
+    const bar = document.getElementById('exportProgressBar');
+    const txt = document.getElementById('exportProgressText');
+    bar.style.width = '0%';
+    txt.textContent = 'Preparing your export...';
+    modal.show();
+
+    // Simulate progress while we wait (since server won't send progress)
+    let progress = 0;
+    const simInterval = setInterval(() => {
+        progress = Math.min(progress + Math.random() * 20, 95);
+        bar.style.width = progress + '%';
+        txt.textContent = `Preparing... ${Math.floor(progress)}%`;
+    }, 350);
+
+    fetch(url, { method: 'GET' })
+    .then(async resp => {
+        clearInterval(simInterval);
+        // read blob
+        const blob = await resp.blob();
+        // determine filename from Content-Disposition
+        let filename = '';
+        const cd = resp.headers.get('Content-Disposition');
+        if (cd && cd.indexOf('filename=') !== -1) {
+            filename = cd.split('filename=')[1].replace(/['"]/g, '').trim();
+        } else {
+            // fallback
+            filename = `export_${Date.now()}.${format === 'excel' ? 'xlsx' : (format === 'pdf' ? 'pdf' : 'csv')}`;
+        }
+
+        // create temporary link to download blob
+        const blobUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(blobUrl);
+
+        document.getElementById('exportProgressBar').style.width = '100%';
+        document.getElementById('exportProgressText').textContent = 'Download started';
+        setTimeout(() => modal.hide(), 700);
+    })
+    .catch(err => {
+        clearInterval(simInterval);
+        console.error('Export failed', err);
+        document.getElementById('exportProgressText').textContent = 'Export failed';
+        setTimeout(() => modal.hide(), 900);
+        showToast('Export failed. See console for details.', 'danger');
+    });
+}
+</script>
+{% endblock %}

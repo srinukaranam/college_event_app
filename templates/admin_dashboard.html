@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header Section -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2 fw-bold text-gradient mb-1">Admin Dashboard</h1>
+            <p class="text-muted mb-0">Welcome back, <span class="fw-semibold text-primary">{{ admin_name }}</span></p>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-primary btn-refresh">
+                <i class="fas fa-sync-alt me-2"></i>Refresh
+            </button>
+            <span class="text-muted align-self-center" id="last-updated"></span>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row g-4 mb-4">
+        <div class="col-lg-3 col-sm-6">
+            <div class="card stat-card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h3 class="card-title mb-0">{{ total_events }}</h3>
+                            <small class="text-muted">Total Events</small>
+                        </div>
+                        <div class="stat-icon bg-primary bg-opacity-10 text-primary rounded-3 p-2">
+                            <i class="fas fa-calendar-alt fa-lg"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-sm-6">
+            <div class="card stat-card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h3 class="card-title mb-0">{{ total_students }}</h3>
+                            <small class="text-muted">Total Students</small>
+                        </div>
+                        <div class="stat-icon bg-success bg-opacity-10 text-success rounded-3 p-2">
+                            <i class="fas fa-users fa-lg"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-sm-6">
+            <div class="card stat-card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h3 class="card-title mb-0">{{ total_registrations }}</h3>
+                            <small class="text-muted">Total Registrations</small>
+                        </div>
+                        <div class="stat-icon bg-info bg-opacity-10 text-info rounded-3 p-2">
+                            <i class="fas fa-ticket-alt fa-lg"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-sm-6">
+            <div class="card stat-card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h3 class="card-title mb-0" id="attendance-rate">--%</h3>
+                            <small class="text-muted">Avg. Attendance</small>
+                        </div>
+                        <div class="stat-icon bg-warning bg-opacity-10 text-warning rounded-3 p-2">
+                            <i class="fas fa-user-check fa-lg"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Recent Events -->
+        <div class="col-xl-8">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center bg-transparent border-0 py-3">
+                    <h4 class="mb-0"><i class="fas fa-clock me-2 text-primary"></i>Recent Events</h4>
+                    <a href="{{ url_for('admin_events') }}" class="btn btn-sm btn-outline-primary">View All</a>
+                </div>
+                <div class="card-body p-0">
+                    {% if recent_events %}
+                    <div class="list-group list-group-flush">
+                        {% for event in recent_events %}
+                        <div class="list-group-item border-0 py-3 px-4 d-flex align-items-start">
+                            <div class="me-3 text-center">
+                                <div class="bg-primary text-white rounded-2 p-2">
+                                    <small class="d-block fw-bold">{{ event.date.split('-')[2] }}</small>
+                                    <small class="d-block">{{ event.date.split('-')[1] }}/{{ event.date.split('-')[0] }}</small>
+                                </div>
+                            </div>
+                            <div class="flex-fill">
+                                <div class="d-flex justify-content-between">
+                                    <div>
+                                        <h6 class="mb-0 fw-semibold">{{ event.title }}</h6>
+                                        <p class="text-muted small mb-1">{{ event.description[:120] }}{% if event.description|length > 120 %}...{% endif %}</p>
+                                        <small class="text-muted"><i class="fas fa-clock me-1"></i>{{ event.time }} &nbsp; <i class="fas fa-map-marker-alt me-1"></i>{{ event.venue }}</small>
+                                    </div>
+                                    <div class="d-flex flex-column gap-2">
+                                        <a href="{{ url_for('event_registrations', event_id=event.id) }}" class="btn btn-sm btn-outline-primary">Registrations</a>
+                                        <a href="{{ url_for('edit_event', event_id=event.id) }}" class="btn btn-sm btn-outline-secondary">Edit</a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-calendar-times fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No Events Yet</h5>
+                        <p class="text-muted">Create your first event to get started.</p>
+                        <a href="{{ url_for('create_event') }}" class="btn btn-primary"><i class="fas fa-plus me-2"></i>Create Event</a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Recently Verified -->
+            <div class="card border-0 shadow-sm mt-4">
+                <div class="card-header bg-transparent border-0 py-3 d-flex justify-content-between">
+                    <h4 class="mb-0"><i class="fas fa-check-circle me-2 text-success"></i>Recently Verified Students</h4>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                    <div class="table-responsive-mobile">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Student</th>
+                                    <th>Student ID</th>
+                                    <th>Event</th>
+                                    <th>Check-in Time</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for verification in recent_verifications %}
+                                <tr>
+                                    <td>{{ verification.student_name }}</td>
+                                    <td>{{ verification.student_id }}</td>
+                                    <td>{{ verification.event_title }}</td>
+                                    <td>{{ verification.checkin_time }}</td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="4" class="text-center text-muted py-4">No verifications yet</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Sidebar -->
+        <div class="col-xl-4">
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-transparent border-0 py-3">
+                    <h5 class="mb-0"><i class="fas fa-bolt me-2 text-warning"></i>Quick Actions</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <a href="{{ url_for('create_event') }}" class="btn btn-success btn-lg"><i class="fas fa-plus-circle me-2"></i>Create New Event</a>
+                        <a href="{{ url_for('admin_events') }}" class="btn btn-primary"><i class="fas fa-calendar me-2"></i>Manage Events</a>
+                        <a href="{{ url_for('export_attendance_all') }}" class="btn btn-outline-info" title="Download all attended records (CSV)">
+                            <i class="fas fa-download me-2"></i>Export Attendance (All)
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-transparent border-0 py-3">
+                    <h5 class="mb-0"><i class="fas fa-info-circle me-2 text-info"></i>System Info</h5>
+                </div>
+                <div class="card-body">
+                    <div class="system-info">
+                        <div class="d-flex justify-content-between py-2 border-bottom"><span class="text-muted">Current Time</span><span id="current-time">--:--:--</span></div>
+                        <div class="d-flex justify-content-between py-2 border-bottom"><span class="text-muted">Events Today</span><span class="badge bg-primary" id="events-today">0</span></div>
+                        <div class="d-flex justify-content-between py-2"><span class="text-muted">Upcoming Events</span><span class="badge bg-success" id="upcoming-events">0</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Export / Download Progress Modal (shared) -->
+<div class="modal fade" id="exportProgressModal" tabindex="-1" aria-labelledby="exportProgressModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Preparing download</h5>
+            </div>
+            <div class="modal-body text-center">
+                <div class="spinner-border text-primary mb-3" role="status"></div>
+                <p id="exportProgressText">Preparing your export...</p>
+                <div class="progress">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" id="exportProgressBar" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function updateTime() {
+    const now = new Date();
+    document.getElementById('current-time').textContent = now.toLocaleTimeString();
+    document.getElementById('last-updated') && (document.getElementById('last-updated').textContent = 'Last updated: ' + now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}));
+}
+
+async function fetchEventsStats() {
+    try {
+        const res = await fetch('/api/events_stats');
+        const data = await res.json();
+        document.getElementById('events-today').textContent = data.today || 0;
+        document.getElementById('upcoming-events').textContent = data.upcoming || 0;
+        // estimate attendance % (you can compute server-side later)
+        document.getElementById('attendance-rate').textContent = '—';
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    updateTime();
+    fetchEventsStats();
+    setInterval(updateTime, 1000);
+    setInterval(fetchEventsStats, 30000);
+    const refreshBtn = document.querySelector('.btn-refresh');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', function() {
+            this.classList.add('loading');
+            fetchEventsStats().finally(() => setTimeout(() => this.classList.remove('loading'), 600));
+        });
+    }
+});
+</script>
+
+<style>
+.stat-card { min-height: 90px; }
+.list-group-item .bg-primary { min-width: 54px; }
+.card { border-radius: 10px; }
+</style>
+{% endblock %}
