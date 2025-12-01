@@ -1040,13 +1040,6 @@ def admin_logout():
     flash('Admin logged out successfully!', 'success')
     return redirect(url_for('admin_login'))
 
-# Staff logout
-@app.route('/staff/logout')
-def staff_logout():
-    session.pop('staff_id', None)
-    session.pop('staff_name', None)
-    flash('Staff logged out successfully!', 'success')
-    return redirect(url_for('staff_login'))
 
 # Run
 if __name__ == '__main__':
