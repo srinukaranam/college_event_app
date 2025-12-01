@@ -1,14 +1,19 @@
-import sqlite3
+import psycopg2
 import os
 
 def get_db_connection():
-    # Ensure database file exists
-    if not os.path.exists('event_management.db'):
-        from app import init_database
-        init_database()
+    # Get DATABASE_URL from environment (provided by Render)
+    database_url = os.environ.get('DATABASE_URL')
     
-    conn = sqlite3.connect('event_management.db')
-    conn.row_factory = sqlite3.Row
+    # Parse the database URL (Render provides postgres:// but we need postgresql://)
+    if database_url and database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+    
+    if not database_url:
+        # Fallback for local development
+        database_url = "postgresql://localhost/event_management"
+    
+    conn = psycopg2.connect(database_url)
     return conn
 
 def execute_query(query, params=(), fetch=False, fetchall=False):
@@ -20,8 +25,14 @@ def execute_query(query, params=(), fetch=False, fetchall=False):
         
         if fetch:
             result = cursor.fetchone()
+            # Convert to dict for compatibility
+            if result:
+                columns = [desc[0] for desc in cursor.description]
+                result = dict(zip(columns, result))
         elif fetchall:
-            result = cursor.fetchall()
+            results = cursor.fetchall()
+            columns = [desc[0] for desc in cursor.description]
+            result = [dict(zip(columns, row)) for row in results]
         else:
             result = None
         
@@ -30,6 +41,7 @@ def execute_query(query, params=(), fetch=False, fetchall=False):
         conn.rollback()
         raise e
     finally:
+        cursor.close()
         conn.close()
     
     return result
