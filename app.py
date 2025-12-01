@@ -3,9 +3,10 @@ import io
 import json
 import os
 import traceback
-import sqlite3
+import psycopg2
 from datetime import datetime
 from io import BytesIO
+import urllib.parse
 
 from flask import (
     Flask, Response, flash, jsonify, redirect, render_template,
@@ -27,18 +28,28 @@ except Exception:
     REPORTLAB_AVAILABLE = False
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key_here'
+app.secret_key = os.environ.get('SECRET_KEY', 'your_secret_key_here')
 app.config['UPLOAD_FOLDER'] = 'static/qrcodes'
 
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
 # -----------------------
-# Database helpers
+# Database helpers for PostgreSQL
 # -----------------------
 def get_db_connection():
-    conn = sqlite3.connect('event_management.db')
-    conn.row_factory = sqlite3.Row
+    # Get DATABASE_URL from environment (provided by Render)
+    database_url = os.environ.get('DATABASE_URL')
+    
+    # Parse the database URL (Render provides postgres:// but we need postgresql://)
+    if database_url and database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+    
+    if not database_url:
+        # Fallback for local development
+        database_url = "postgresql://localhost/event_management"
+    
+    conn = psycopg2.connect(database_url)
     return conn
 
 def execute_query(query, params=(), fetch=False, fetchall=False):
@@ -46,43 +57,151 @@ def execute_query(query, params=(), fetch=False, fetchall=False):
     try:
         cursor = conn.cursor()
         cursor.execute(query, params)
+        
         if fetch:
             result = cursor.fetchone()
+            # Convert to dict for compatibility
+            if result:
+                columns = [desc[0] for desc in cursor.description]
+                result = dict(zip(columns, result))
         elif fetchall:
-            result = cursor.fetchall()
+            results = cursor.fetchall()
+            columns = [desc[0] for desc in cursor.description]
+            result = [dict(zip(columns, row)) for row in results]
         else:
             result = None
+        
         conn.commit()
         return result
     except Exception as e:
         conn.rollback()
-        raise
+        raise e
     finally:
         conn.close()
+
+# -----------------------
+# Initialize Database Tables
+# -----------------------
+def init_database():
+    """Initialize all required tables in PostgreSQL"""
+    try:
+        # Students table
+        execute_query("""
+            CREATE TABLE IF NOT EXISTS students (
+                id SERIAL PRIMARY KEY,
+                student_id VARCHAR(50) UNIQUE NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                email VARCHAR(100) UNIQUE NOT NULL,
+                password VARCHAR(100) NOT NULL,
+                department VARCHAR(100),
+                year VARCHAR(10),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Events table
+        execute_query("""
+            CREATE TABLE IF NOT EXISTS events (
+                id SERIAL PRIMARY KEY,
+                title VARCHAR(200) NOT NULL,
+                description TEXT,
+                date DATE,
+                time TIME,
+                venue VARCHAR(100),
+                organizer VARCHAR(100),
+                capacity INTEGER,
+                registered_count INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Registrations table
+        execute_query("""
+            CREATE TABLE IF NOT EXISTS registrations (
+                id SERIAL PRIMARY KEY,
+                student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+                event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
+                registration_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                qr_code_path VARCHAR(500),
+                checkin_time TIMESTAMP,
+                attended BOOLEAN DEFAULT FALSE,
+                UNIQUE(student_id, event_id)
+            )
+        """)
+        
+        # Staff table
+        execute_query("""
+            CREATE TABLE IF NOT EXISTS staff (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(50) UNIQUE NOT NULL,
+                password VARCHAR(100) NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Admins table
+        execute_query("""
+            CREATE TABLE IF NOT EXISTS admins (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(50) UNIQUE NOT NULL,
+                password VARCHAR(100) NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Insert default admin if not exists
+        existing_admin = execute_query(
+            "SELECT * FROM admins WHERE username = 'admin'", 
+            fetch=True
+        )
+        if not existing_admin:
+            execute_query(
+                "INSERT INTO admins (username, password, name) VALUES (%s, %s, %s)",
+                ('admin', 'admin123', 'System Administrator')
+            )
+        
+        # Insert default staff if not exists
+        existing_staff = execute_query(
+            "SELECT * FROM staff WHERE username = 'staff'", 
+            fetch=True
+        )
+        if not existing_staff:
+            execute_query(
+                "INSERT INTO staff (username, password, name) VALUES (%s, %s, %s)",
+                ('staff', 'staff123', 'Event Staff')
+            )
+        
+        print("Database initialized successfully!")
+        
+    except Exception as e:
+        print(f"Error initializing database: {str(e)}")
 
 # -----------------------
 # Ensure DB schema (non-destructive)
 # -----------------------
 def update_database_schema():
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    """Update schema if needed - PostgreSQL version"""
     try:
-        cursor.execute("PRAGMA table_info(registrations)")
-        columns = [c[1] for c in cursor.fetchall()]
-        if 'checkin_time' not in columns:
-            cursor.execute("ALTER TABLE registrations ADD COLUMN checkin_time TIMESTAMP")
-        if 'attended' not in columns:
-            # add attended as boolean (0/1)
-            cursor.execute("ALTER TABLE registrations ADD COLUMN attended BOOLEAN DEFAULT 0")
-        conn.commit()
+        # Check if checkin_time column exists in registrations
+        try:
+            execute_query("SELECT checkin_time FROM registrations LIMIT 1")
+        except Exception:
+            execute_query("ALTER TABLE registrations ADD COLUMN checkin_time TIMESTAMP")
+        
+        # Check if attended column exists
+        try:
+            execute_query("SELECT attended FROM registrations LIMIT 1")
+        except Exception:
+            execute_query("ALTER TABLE registrations ADD COLUMN attended BOOLEAN DEFAULT FALSE")
+            
     except Exception as e:
-        # If migrations fail, ignore but log
         print("Schema update warning:", str(e))
-        conn.rollback()
-    finally:
-        conn.close()
 
+# Initialize database when app starts
 with app.app_context():
+    init_database()
     update_database_schema()
 
 # -----------------------
@@ -105,7 +224,7 @@ def register():
         
         # Check if student already exists
         existing_student = execute_query(
-            "SELECT * FROM students WHERE student_id = ? OR email = ?", 
+            "SELECT * FROM students WHERE student_id = %s OR email = %s", 
             (student_id, email), 
             fetch=True
         )
@@ -116,7 +235,7 @@ def register():
         
         # Insert new student
         execute_query(
-            "INSERT INTO students (student_id, name, email, password, department, year) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO students (student_id, name, email, password, department, year) VALUES (%s, %s, %s, %s, %s, %s)",
             (student_id, name, email, password, department, year)
         )
         
@@ -133,7 +252,7 @@ def login():
         password = request.form['password']
         
         student = execute_query(
-            "SELECT * FROM students WHERE email = ? AND password = ?", 
+            "SELECT * FROM students WHERE email = %s AND password = %s", 
             (email, password), 
             fetch=True
         )
@@ -157,14 +276,17 @@ def dashboard():
     # Get upcoming events
     today = datetime.now().strftime('%Y-%m-%d')
     upcoming_events = execute_query(
-        "SELECT * FROM events WHERE date >= ? ORDER BY date, time", 
+        "SELECT * FROM events WHERE date >= %s ORDER BY date, time", 
         (today,), 
         fetchall=True
     )
     
     # Get student's registrations
     registrations = execute_query(
-        "SELECT e.*, r.registration_time, r.qr_code_path FROM events e JOIN registrations r ON e.id = r.event_id WHERE r.student_id = ?",
+        """SELECT e.*, r.registration_time, r.qr_code_path 
+           FROM events e 
+           JOIN registrations r ON e.id = r.event_id 
+           WHERE r.student_id = %s""",
         (session['student_id'],),
         fetchall=True
     )
@@ -183,7 +305,7 @@ def events():
     # Get all upcoming events
     today = datetime.now().strftime('%Y-%m-%d')
     events = execute_query(
-        "SELECT * FROM events WHERE date >= ? ORDER BY date, time", 
+        "SELECT * FROM events WHERE date >= %s ORDER BY date, time", 
         (today,), 
         fetchall=True
     )
@@ -197,7 +319,7 @@ def event_details(event_id):
         return redirect(url_for('login'))
     
     event = execute_query(
-        "SELECT * FROM events WHERE id = ?", 
+        "SELECT * FROM events WHERE id = %s", 
         (event_id,), 
         fetch=True
     )
@@ -208,7 +330,7 @@ def event_details(event_id):
     
     # Check if student is already registered
     registration = execute_query(
-        "SELECT * FROM registrations WHERE student_id = ? AND event_id = ?", 
+        "SELECT * FROM registrations WHERE student_id = %s AND event_id = %s", 
         (session['student_id'], event_id), 
         fetch=True
     )
@@ -223,7 +345,7 @@ def register_event(event_id):
     
     # Check if event exists and has capacity
     event = execute_query(
-        "SELECT * FROM events WHERE id = ?", 
+        "SELECT * FROM events WHERE id = %s", 
         (event_id,), 
         fetch=True
     )
@@ -238,7 +360,7 @@ def register_event(event_id):
     
     # Check if already registered
     existing_registration = execute_query(
-        "SELECT * FROM registrations WHERE student_id = ? AND event_id = ?", 
+        "SELECT * FROM registrations WHERE student_id = %s AND event_id = %s", 
         (session['student_id'], event_id), 
         fetch=True
     )
@@ -249,7 +371,7 @@ def register_event(event_id):
     
     # Get student details for QR code
     student = execute_query(
-        "SELECT * FROM students WHERE id = ?", 
+        "SELECT * FROM students WHERE id = %s", 
         (session['student_id'],), 
         fetch=True
     )
@@ -300,13 +422,13 @@ Registration ID: {student['student_id']}_{event_id}
         
         # Register for event
         execute_query(
-            "INSERT INTO registrations (student_id, event_id, qr_code_path) VALUES (?, ?, ?)",
+            "INSERT INTO registrations (student_id, event_id, qr_code_path) VALUES (%s, %s, %s)",
             (session['student_id'], event_id, qr_web_path)
         )
         
         # Update event registration count
         execute_query(
-            "UPDATE events SET registered_count = registered_count + 1 WHERE id = ?",
+            "UPDATE events SET registered_count = registered_count + 1 WHERE id = %s",
             (event_id,)
         )
         
@@ -319,31 +441,6 @@ Registration ID: {student['student_id']}_{event_id}
         flash('Error generating QR code. Please try again.', 'error')
         return redirect(url_for('event_details', event_id=event_id))
 
-# Debug route to check QR code generation
-@app.route('/debug/qr_test')
-def qr_test():
-    try:
-        # Test QR code generation
-        qr_data = "Test QR Code Data"
-        qr = qrcode.QRCode(
-            version=1,
-            error_correction=qrcode.constants.ERROR_CORRECT_L,
-            box_size=10,
-            border=4,
-        )
-        qr.add_data(qr_data)
-        qr.make(fit=True)
-        
-        qr_img = qr.make_image(fill_color="black", back_color="white")
-        
-        # Test saving
-        test_path = os.path.join(app.config['UPLOAD_FOLDER'], 'test_qr.png')
-        qr_img.save(test_path)
-        
-        return f"QR test successful! File saved at: {test_path}"
-    except Exception as e:
-        return f"QR test failed: {str(e)}"
-
 # My registrations
 @app.route('/my_registrations')
 def my_registrations():
@@ -351,7 +448,11 @@ def my_registrations():
         return redirect(url_for('login'))
     
     registrations = execute_query(
-        "SELECT e.*, r.registration_time, r.qr_code_path, r.attended FROM events e JOIN registrations r ON e.id = r.event_id WHERE r.student_id = ? ORDER BY e.date, e.time",
+        """SELECT e.*, r.registration_time, r.qr_code_path, r.attended 
+           FROM events e 
+           JOIN registrations r ON e.id = r.event_id 
+           WHERE r.student_id = %s 
+           ORDER BY e.date, e.time""",
         (session['student_id'],),
         fetchall=True
     )
@@ -366,7 +467,7 @@ def staff_login():
         password = request.form['password']
         
         staff = execute_query(
-            "SELECT * FROM staff WHERE username = ? AND password = ?", 
+            "SELECT * FROM staff WHERE username = %s AND password = %s", 
             (username, password), 
             fetch=True
         )
@@ -416,14 +517,14 @@ def staff_verify():
         
         # Get student by student_id
         student = execute_query(
-            "SELECT * FROM students WHERE student_id = ?", 
+            "SELECT * FROM students WHERE student_id = %s", 
             (student_id_str,), 
             fetch=True
         )
         
         # Get event by title
         event = execute_query(
-            "SELECT * FROM events WHERE title = ?", 
+            "SELECT * FROM events WHERE title = %s", 
             (event_title,), 
             fetch=True
         )
@@ -436,7 +537,7 @@ def staff_verify():
         
         # Check if student is registered for this event
         registration = execute_query(
-            "SELECT * FROM registrations WHERE student_id = ? AND event_id = ?", 
+            "SELECT * FROM registrations WHERE student_id = %s AND event_id = %s", 
             (student['id'], event['id']), 
             fetch=True
         )
@@ -454,7 +555,7 @@ def staff_verify():
         # Mark as attended with timestamp
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         execute_query(
-            "UPDATE registrations SET attended = TRUE, checkin_time = ? WHERE student_id = ? AND event_id = ?",
+            "UPDATE registrations SET attended = TRUE, checkin_time = %s WHERE student_id = %s AND event_id = %s",
             (current_time, student['id'], event['id'])
         )
         
@@ -489,18 +590,18 @@ def staff_logout():
     flash('Staff logged out successfully!', 'success')
     return redirect(url_for('staff_login'))
 
-# Staff scan page - FIXED: Now protected for staff only
+# Staff scan page
 @app.route('/staff_scan')
 def staff_scan():
-    if 'staff_id' not in session:  # FIXED: Changed from admin_id to staff_id
+    if 'staff_id' not in session:
         flash('Access denied. Staff access required.', 'error')
         return redirect(url_for('staff_login'))
     return render_template('staff_scan.html')
 
-# Staff verification page - FIXED: Now protected for staff only
+# Staff verification page
 @app.route('/staff_verify_page', methods=['GET', 'POST'])
 def staff_verify_page():
-    if 'staff_id' not in session:  # FIXED: Changed from admin_id to staff_id
+    if 'staff_id' not in session:
         flash('Access denied. Staff access required.', 'error')
         return redirect(url_for('staff_login'))
         
@@ -530,16 +631,16 @@ def staff_verify_page():
                                      success=False, 
                                      message='Invalid QR code format')
             
-            # Get student by student_id (from students table)
+            # Get student by student_id
             student = execute_query(
-                "SELECT * FROM students WHERE student_id = ?", 
+                "SELECT * FROM students WHERE student_id = %s", 
                 (student_id_str,), 
                 fetch=True
             )
             
             # Get event by title
             event = execute_query(
-                "SELECT * FROM events WHERE title = ?", 
+                "SELECT * FROM events WHERE title = %s", 
                 (event_title,), 
                 fetch=True
             )
@@ -547,7 +648,7 @@ def staff_verify_page():
             if student and event:
                 # Check if student is registered for this event
                 registration = execute_query(
-                    "SELECT * FROM registrations WHERE student_id = ? AND event_id = ?", 
+                    "SELECT * FROM registrations WHERE student_id = %s AND event_id = %s", 
                     (student['id'], event['id']), 
                     fetch=True
                 )
@@ -562,19 +663,10 @@ def staff_verify_page():
                     # Mark as attended with timestamp
                     current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                     
-                    # Try to update with checkin_time, fallback to without if column doesn't exist
-                    try:
-                        execute_query(
-                            "UPDATE registrations SET attended = TRUE, checkin_time = ? WHERE student_id = ? AND event_id = ?",
-                            (current_time, student['id'], event['id'])
-                        )
-                    except sqlite3.OperationalError:
-                        # Fallback if checkin_time column doesn't exist
-                        execute_query(
-                            "UPDATE registrations SET attended = TRUE WHERE student_id = ? AND event_id = ?",
-                            (student['id'], event['id'])
-                        )
-                        current_time = "Recorded (time not available)"
+                    execute_query(
+                        "UPDATE registrations SET attended = TRUE, checkin_time = %s WHERE student_id = %s AND event_id = %s",
+                        (current_time, student['id'], event['id'])
+                    )
                     
                     return render_template('staff_verify.html',
                                          success=True,
@@ -597,29 +689,16 @@ def staff_verify_page():
                                  message=f'Error processing QR code: {str(e)}')
     
     # GET request - show verification history or recent scans
-    try:
-        recent_verifications = execute_query(
-            """SELECT s.name, s.student_id, e.title, r.checkin_time 
-               FROM registrations r 
-               JOIN students s ON r.student_id = s.id 
-               JOIN events e ON r.event_id = e.id 
-               WHERE r.attended = TRUE 
-               ORDER BY r.checkin_time DESC 
-               LIMIT 10""",
-            fetchall=True
-        )
-    except sqlite3.OperationalError:
-        # Fallback if checkin_time column doesn't exist
-        recent_verifications = execute_query(
-            """SELECT s.name, s.student_id, e.title, r.registration_time as checkin_time 
-               FROM registrations r 
-               JOIN students s ON r.student_id = s.id 
-               JOIN events e ON r.event_id = e.id 
-               WHERE r.attended = TRUE 
-               ORDER BY r.registration_time DESC 
-               LIMIT 10""",
-            fetchall=True
-        )
+    recent_verifications = execute_query(
+        """SELECT s.name, s.student_id, e.title, r.checkin_time 
+           FROM registrations r 
+           JOIN students s ON r.student_id = s.id 
+           JOIN events e ON r.event_id = e.id 
+           WHERE r.attended = TRUE 
+           ORDER BY r.checkin_time DESC 
+           LIMIT 10""",
+        fetchall=True
+    )
     
     return render_template('staff_verify.html', recent_verifications=recent_verifications)
 
@@ -629,7 +708,7 @@ def admin_login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        admin = execute_query("SELECT * FROM admins WHERE username = ? AND password = ?", (username, password), fetch=True)
+        admin = execute_query("SELECT * FROM admins WHERE username = %s AND password = %s", (username, password), fetch=True)
         if admin:
             session['admin_id'] = admin['id']
             session['admin_name'] = admin['name']
@@ -644,9 +723,9 @@ def admin_dashboard():
     if 'admin_id' not in session:
         return redirect(url_for('admin_login'))
 
-    total_events = execute_query("SELECT COUNT(*) as count FROM events", fetch=True)['count'] if execute_query("SELECT COUNT(*) as count FROM events", fetch=True) else 0
-    total_students = execute_query("SELECT COUNT(*) as count FROM students", fetch=True)['count'] if execute_query("SELECT COUNT(*) as count FROM students", fetch=True) else 0
-    total_registrations = execute_query("SELECT COUNT(*) as count FROM registrations", fetch=True)['count'] if execute_query("SELECT COUNT(*) as count FROM registrations", fetch=True) else 0
+    total_events = execute_query("SELECT COUNT(*) as count FROM events", fetch=True)['count']
+    total_students = execute_query("SELECT COUNT(*) as count FROM students", fetch=True)['count']
+    total_registrations = execute_query("SELECT COUNT(*) as count FROM registrations", fetch=True)['count']
 
     recent_events = execute_query("SELECT * FROM events ORDER BY created_at DESC LIMIT 5", fetchall=True) or []
     recent_verifications = execute_query(
@@ -654,7 +733,7 @@ def admin_dashboard():
            FROM registrations r
            JOIN students s ON r.student_id = s.id
            JOIN events e ON r.event_id = e.id
-           WHERE r.attended = 1
+           WHERE r.attended = TRUE
            ORDER BY r.checkin_time DESC
            LIMIT 10""",
         fetchall=True
@@ -676,9 +755,7 @@ def admin_events():
     events = execute_query("SELECT * FROM events ORDER BY date, time", fetchall=True) or []
     return render_template('admin_events.html', events=events)
 
-# -----------------------------------------
-# Admin: Create Event
-# -----------------------------------------
+# Create Event
 @app.route('/admin/create_event', methods=['GET', 'POST'])
 def create_event():
     if 'admin_id' not in session:
@@ -696,7 +773,7 @@ def create_event():
         execute_query("""
             INSERT INTO events 
             (title, description, date, time, venue, organizer, capacity, registered_count, created_at) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'))
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 0, CURRENT_TIMESTAMP)
         """, (title, description, date, time, venue, organizer, capacity))
 
         flash('Event created successfully!', 'success')
@@ -704,15 +781,13 @@ def create_event():
 
     return render_template('create_event.html')
 
-# -----------------------------------------
-# Admin: Edit Event
-# -----------------------------------------
+# Edit Event
 @app.route('/admin/edit_event/<int:event_id>', methods=['GET', 'POST'])
 def edit_event(event_id):
     if 'admin_id' not in session:
         return redirect(url_for('admin_login'))
 
-    event = execute_query("SELECT * FROM events WHERE id = ?", (event_id,), fetch=True)
+    event = execute_query("SELECT * FROM events WHERE id = %s", (event_id,), fetch=True)
 
     if not event:
         flash("Event not found!", "error")
@@ -729,8 +804,8 @@ def edit_event(event_id):
 
         execute_query("""
             UPDATE events
-            SET title = ?, description = ?, date = ?, time = ?, venue = ?, organizer = ?, capacity = ?
-            WHERE id = ?
+            SET title = %s, description = %s, date = %s, time = %s, venue = %s, organizer = %s, capacity = %s
+            WHERE id = %s
         """, (title, description, date, time, venue, organizer, capacity, event_id))
 
         flash("Event updated successfully!", "success")
@@ -738,26 +813,22 @@ def edit_event(event_id):
 
     return render_template('edit_event.html', event=event)
 
-
-# -----------------------------------------
-# Admin: Delete Event
-# -----------------------------------------
+# Delete Event
 @app.route('/admin/delete_event/<int:event_id>')
 def delete_event(event_id):
     if 'admin_id' not in session:
         return redirect(url_for('admin_login'))
 
-    event = execute_query("SELECT * FROM events WHERE id = ?", (event_id,), fetch=True)
+    event = execute_query("SELECT * FROM events WHERE id = %s", (event_id,), fetch=True)
 
     if not event:
         flash("Event not found!", "error")
         return redirect(url_for('admin_events'))
 
-    execute_query("DELETE FROM events WHERE id = ?", (event_id,))
+    execute_query("DELETE FROM events WHERE id = %s", (event_id,))
 
     flash("Event deleted successfully!", "success")
     return redirect(url_for('admin_events'))
-
 
 # View event registrations (admin)
 @app.route('/admin/event_registrations/<int:event_id>')
@@ -765,35 +836,34 @@ def event_registrations(event_id):
     if 'admin_id' not in session:
         return redirect(url_for('admin_login'))
 
-    event = execute_query("SELECT * FROM events WHERE id = ?", (event_id,), fetch=True)
+    event = execute_query("SELECT * FROM events WHERE id = %s", (event_id,), fetch=True)
     registrations = execute_query(
         """SELECT r.*, s.name, s.student_id, s.department, s.year
            FROM registrations r
            JOIN students s ON r.student_id = s.id
-           WHERE r.event_id = ?
+           WHERE r.event_id = %s
            ORDER BY r.registration_time""",
         (event_id,), fetchall=True) or []
 
     return render_template('event_registrations.html', event=event, registrations=registrations)
 
 # -----------------------
-# Export helpers
+# Export helpers (same as before, but with PostgreSQL compatibility)
 # -----------------------
 def make_dataframe_from_regs(regs):
-    """Return a pandas DataFrame from sqlite3.Row registration records."""
+    """Return a pandas DataFrame from registration records."""
     rows = []
     for r in regs:
         rows.append({
-            'Student Name': r['name'] if 'name' in r.keys() else (r['student_name'] if 'student_name' in r.keys() else ''),
-            'Student ID': r['student_id'] if 'student_id' in r.keys() else '',
-            'Department': r['department'] if 'department' in r.keys() else '',
-            'Year': r['year'] if 'year' in r.keys() else '',
-            'Registration Time': r['registration_time'] if 'registration_time' in r.keys() else '',
-            'Attended': 'Yes' if ('attended' in r.keys() and r['attended'] in (1, True)) else 'No',
-            'Check-in Time': r['checkin_time'] if 'checkin_time' in r.keys() and r['checkin_time'] else ''
+            'Student Name': r.get('name', ''),
+            'Student ID': r.get('student_id', ''),
+            'Department': r.get('department', ''),
+            'Year': r.get('year', ''),
+            'Registration Time': r.get('registration_time', ''),
+            'Attended': 'Yes' if r.get('attended') else 'No',
+            'Check-in Time': r.get('checkin_time', '') if r.get('checkin_time') else ''
         })
     return pd.DataFrame(rows)
-
 
 def dataframe_to_excel_bytes(df, sheet_name='Sheet1'):
     output = BytesIO()
@@ -841,17 +911,9 @@ def dataframe_to_csv_bytes(df):
     output.seek(0)
     return output.getvalue()
 
-# -----------------------
 # Event-specific export route
-# -----------------------
 @app.route('/admin/event_registrations_export/<int:event_id>')
 def export_event_registrations(event_id):
-    """
-    Export registrations for a specific event.
-    Query params:
-        format=csv|excel|pdf
-        attendance_only=1 (optional) -> only exported attended records
-    """
     if 'admin_id' not in session:
         return redirect(url_for('admin_login'))
 
@@ -862,27 +924,25 @@ def export_event_registrations(event_id):
     query = """SELECT r.*, s.name, s.student_id, s.department, s.year
                FROM registrations r
                JOIN students s ON r.student_id = s.id
-               WHERE r.event_id = ?"""
+               WHERE r.event_id = %s"""
     params = [event_id]
     if attendance_only:
-        query += " AND r.attended = 1"
+        query += " AND r.attended = TRUE"
     query += " ORDER BY r.registration_time"
 
     regs = execute_query(query, params, fetchall=True) or []
 
     df = make_dataframe_from_regs(regs)
-    event = execute_query("SELECT * FROM events WHERE id = ?", (event_id,), fetch=True)
-    event_title_clean = event['title'].replace(' ', '_') if event and 'title' in event.keys() else f"event_{event_id}"
+    event = execute_query("SELECT * FROM events WHERE id = %s", (event_id,), fetch=True)
+    event_title_clean = event['title'].replace(' ', '_') if event and 'title' in event else f"event_{event_id}"
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     filename = f"{event_title_clean}_registrations_{timestamp}"
 
     if fmt == 'csv':
-        # Create CSV with BOM so Excel on Windows recognizes UTF-8 properly
         output = io.StringIO()
         df.to_csv(output, index=False, encoding='utf-8')
         csv_text = output.getvalue()
-        # Prepend UTF-8 BOM
         csv_bytes = ('\ufeff' + csv_text).encode('utf-8')
         csv_filename = f"{filename}.csv"
         return Response(csv_bytes, mimetype="text/csv; charset=utf-8",
@@ -905,11 +965,10 @@ def export_event_registrations(event_id):
 
     elif fmt == 'pdf':
         try:
-            pdf_io = dataframe_to_pdf_bytes(df, title=f"Registrations - {event['title'] if event and 'title' in event.keys() else event_title_clean}")
+            pdf_io = dataframe_to_pdf_bytes(df, title=f"Registrations - {event['title'] if event and 'title' in event else event_title_clean}")
             pdf_filename = f"{filename}.pdf"
             return send_file(pdf_io, as_attachment=True, download_name=pdf_filename, mimetype='application/pdf')
         except Exception as e:
-            # fallback to csv with a helpful message
             flash('PDF generation not available. Falling back to CSV.', 'warning')
             output = io.StringIO()
             df.to_csv(output, index=False, encoding='utf-8')
@@ -921,10 +980,7 @@ def export_event_registrations(event_id):
         flash('Unknown format requested. Supported: csv, excel, pdf', 'error')
         return redirect(url_for('event_registrations', event_id=event_id))
 
-
-# -----------------------
 # Attendance-only export for all events (admin)
-# -----------------------
 @app.route('/admin/export/attendance_all')
 def export_attendance_all():
     if 'admin_id' not in session:
@@ -935,22 +991,21 @@ def export_attendance_all():
                FROM registrations r
                JOIN students s ON r.student_id = s.id
                JOIN events e ON r.event_id = e.id
-               WHERE r.attended = 1
+               WHERE r.attended = TRUE
                ORDER BY r.checkin_time DESC"""
     records = execute_query(query, fetchall=True) or []
 
-    # Convert to a DataFrame with extra columns (use indexing, not .get())
+    # Convert to a DataFrame
     rows = []
     for r in records:
-        # r is sqlite3.Row — use r.keys() and r[...] safely
         rows.append({
-            'Student Name': r['name'] if 'name' in r.keys() else '',
-            'Student ID': r['student_id'] if 'student_id' in r.keys() else '',
-            'Department': r['department'] if 'department' in r.keys() else '',
-            'Year': r['year'] if 'year' in r.keys() else '',
-            'Event Title': r['event_title'] if 'event_title' in r.keys() else '',
-            'Event Date': r['event_date'] if 'event_date' in r.keys() else '',
-            'Check-in Time': r['checkin_time'] if 'checkin_time' in r.keys() and r['checkin_time'] else '',
+            'Student Name': r.get('name', ''),
+            'Student ID': r.get('student_id', ''),
+            'Department': r.get('department', ''),
+            'Year': r.get('year', ''),
+            'Event Title': r.get('event_title', ''),
+            'Event Date': r.get('event_date', ''),
+            'Check-in Time': r.get('checkin_time', '') if r.get('checkin_time') else '',
         })
     df = pd.DataFrame(rows)
 
@@ -994,9 +1049,7 @@ def export_attendance_all():
         flash('Unknown format', 'error')
         return redirect(url_for('admin_dashboard'))
 
-# -----------------------
-# Small helper route to toggle attendance (AJAX)
-# -----------------------
+# Mark attendance (AJAX)
 @app.route('/admin/mark_attendance', methods=['POST'])
 def admin_mark_attendance():
     if 'admin_id' not in session:
@@ -1007,19 +1060,31 @@ def admin_mark_attendance():
     attended = request.json.get('attended', False)
 
     # Find student internal id from students table by student_id
-    student = execute_query("SELECT * FROM students WHERE student_id = ?", (student_id,), fetch=True)
+    student = execute_query("SELECT * FROM students WHERE student_id = %s", (student_id,), fetch=True)
     if not student:
         return jsonify({'success': False, 'message': 'Student not found'})
 
     try:
         checkin_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S') if attended else None
         if attended:
-            execute_query("UPDATE registrations SET attended = 1, checkin_time = ? WHERE student_id = ? AND event_id = ?", (checkin_time, student['id'], event_id))
+            execute_query("UPDATE registrations SET attended = TRUE, checkin_time = %s WHERE student_id = %s AND event_id = %s", (checkin_time, student['id'], event_id))
         else:
-            execute_query("UPDATE registrations SET attended = 0, checkin_time = NULL WHERE student_id = ? AND event_id = ?", (student['id'], event_id))
+            execute_query("UPDATE registrations SET attended = FALSE, checkin_time = NULL WHERE student_id = %s AND event_id = %s", (student['id'], event_id))
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
+
+
+# -----------------------
+# Student Logout - Add this new route
+# -----------------------
+@app.route('/logout')
+def logout():
+    # Clear student session data
+    session.pop('student_id', None)
+    session.pop('student_name', None)
+    flash('Logged out successfully!', 'success')
+    return redirect(url_for('index'))
 
 # Admin logout
 @app.route('/admin/logout')
@@ -1029,6 +1094,15 @@ def admin_logout():
     flash('Admin logged out successfully!', 'success')
     return redirect(url_for('admin_login'))
 
+# Staff logout
+@app.route('/staff/logout')
+def staff_logout():
+    session.pop('staff_id', None)
+    session.pop('staff_name', None)
+    flash('Staff logged out successfully!', 'success')
+    return redirect(url_for('staff_login'))
+
 # Run
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
