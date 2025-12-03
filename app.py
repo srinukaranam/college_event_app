@@ -4,6 +4,7 @@ import json
 import os
 import traceback
 import psycopg2
+import base64
 from datetime import datetime
 from io import BytesIO
 import urllib.parse
@@ -35,32 +36,50 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
 # -----------------------
-# Database helpers for PostgreSQL
+# Database Configuration with SSL for Render
 # -----------------------
 def get_db_connection():
-    # Get DATABASE_URL from environment (provided by Render)
+    """Get PostgreSQL database connection from Render"""
     database_url = os.environ.get('DATABASE_URL')
     
-    # Parse the database URL (Render provides postgres:// but we need postgresql://)
-    if database_url and database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql://", 1)
-    
     if not database_url:
+        print("WARNING: DATABASE_URL not set. Using fallback.")
         # Fallback for local development
         database_url = "postgresql://localhost/event_management"
     
-    conn = psycopg2.connect(database_url)
-    return conn
+    # Fix URL format for SQLAlchemy/Render
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+    
+    try:
+        # Add SSL requirement for Render PostgreSQL
+        conn = psycopg2.connect(database_url, sslmode='require')
+        print("✅ Connected to PostgreSQL successfully")
+        return conn
+    except Exception as e:
+        print(f"❌ Error connecting to PostgreSQL: {e}")
+        # Try without SSL for local development
+        try:
+            conn = psycopg2.connect(database_url)
+            print("✅ Connected without SSL (local)")
+            return conn
+        except Exception as e2:
+            print(f"❌ Connection failed: {e2}")
+            return None
 
 def execute_query(query, params=(), fetch=False, fetchall=False):
+    """Execute query with proper error handling"""
     conn = get_db_connection()
+    if conn is None:
+        print("❌ Database connection failed")
+        return None
+    
     try:
         cursor = conn.cursor()
         cursor.execute(query, params)
         
         if fetch:
             result = cursor.fetchone()
-            # Convert to dict for compatibility
             if result:
                 columns = [desc[0] for desc in cursor.description]
                 result = dict(zip(columns, result))
@@ -73,136 +92,185 @@ def execute_query(query, params=(), fetch=False, fetchall=False):
         
         conn.commit()
         return result
+        
     except Exception as e:
-        conn.rollback()
-        raise e
+        print(f"❌ Database query error: {e}")
+        print(f"Query: {query}")
+        print(f"Params: {params}")
+        if conn:
+            conn.rollback()
+        return None
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 # -----------------------
-# Initialize Database Tables
+# Check and Initialize Database
 # -----------------------
-def init_database():
-    """Initialize all required tables in PostgreSQL"""
+def check_and_init_database():
+    """Check if database tables exist, create if not"""
     try:
-        # Students table
-        execute_query("""
-            CREATE TABLE IF NOT EXISTS students (
-                id SERIAL PRIMARY KEY,
-                student_id VARCHAR(50) UNIQUE NOT NULL,
-                name VARCHAR(100) NOT NULL,
-                email VARCHAR(100) UNIQUE NOT NULL,
-                password VARCHAR(100) NOT NULL,
-                department VARCHAR(100),
-                year VARCHAR(10),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        print("🔍 Checking database tables...")
+        
+        # Test connection first
+        conn = get_db_connection()
+        if conn is None:
+            print("❌ Cannot connect to database")
+            return False
+        
+        cursor = conn.cursor()
+        
+        # Check if students table exists
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'students'
             )
         """)
+        tables_exist = cursor.fetchone()[0]
         
-        # Events table
-        execute_query("""
-            CREATE TABLE IF NOT EXISTS events (
-                id SERIAL PRIMARY KEY,
-                title VARCHAR(200) NOT NULL,
-                description TEXT,
-                date DATE,
-                time TIME,
-                venue VARCHAR(100),
-                organizer VARCHAR(100),
-                capacity INTEGER,
-                registered_count INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Registrations table
-        execute_query("""
-            CREATE TABLE IF NOT EXISTS registrations (
-                id SERIAL PRIMARY KEY,
-                student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
-                event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
-                registration_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                qr_code_path VARCHAR(500),
-                checkin_time TIMESTAMP,
-                attended BOOLEAN DEFAULT FALSE,
-                UNIQUE(student_id, event_id)
-            )
-        """)
-        
-        # Staff table
-        execute_query("""
-            CREATE TABLE IF NOT EXISTS staff (
-                id SERIAL PRIMARY KEY,
-                username VARCHAR(50) UNIQUE NOT NULL,
-                password VARCHAR(100) NOT NULL,
-                name VARCHAR(100) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Admins table
-        execute_query("""
-            CREATE TABLE IF NOT EXISTS admins (
-                id SERIAL PRIMARY KEY,
-                username VARCHAR(50) UNIQUE NOT NULL,
-                password VARCHAR(100) NOT NULL,
-                name VARCHAR(100) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Insert default admin if not exists
-        existing_admin = execute_query(
-            "SELECT * FROM admins WHERE username = 'admin'", 
-            fetch=True
-        )
-        if not existing_admin:
-            execute_query(
-                "INSERT INTO admins (username, password, name) VALUES (%s, %s, %s)",
-                ('admin', 'admin123', 'System Administrator')
-            )
-        
-        # Insert default staff if not exists
-        existing_staff = execute_query(
-            "SELECT * FROM staff WHERE username = 'staff'", 
-            fetch=True
-        )
-        if not existing_staff:
-            execute_query(
-                "INSERT INTO staff (username, password, name) VALUES (%s, %s, %s)",
-                ('staff', 'staff123', 'Event Staff')
-            )
-        
-        print("Database initialized successfully!")
-        
-    except Exception as e:
-        print(f"Error initializing database: {str(e)}")
-
-# -----------------------
-# Ensure DB schema (non-destructive)
-# -----------------------
-def update_database_schema():
-    """Update schema if needed - PostgreSQL version"""
-    try:
-        # Check if checkin_time column exists in registrations
-        try:
-            execute_query("SELECT checkin_time FROM registrations LIMIT 1")
-        except Exception:
-            execute_query("ALTER TABLE registrations ADD COLUMN checkin_time TIMESTAMP")
-        
-        # Check if attended column exists
-        try:
-            execute_query("SELECT attended FROM registrations LIMIT 1")
-        except Exception:
-            execute_query("ALTER TABLE registrations ADD COLUMN attended BOOLEAN DEFAULT FALSE")
+        if not tables_exist:
+            print("📦 Tables don't exist. Creating tables...")
             
+            # Create tables
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS students (
+                    id SERIAL PRIMARY KEY,
+                    student_id VARCHAR(50) UNIQUE NOT NULL,
+                    name VARCHAR(100) NOT NULL,
+                    email VARCHAR(100) UNIQUE NOT NULL,
+                    password VARCHAR(100) NOT NULL,
+                    department VARCHAR(100),
+                    year VARCHAR(10),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS events (
+                    id SERIAL PRIMARY KEY,
+                    title VARCHAR(200) NOT NULL,
+                    description TEXT,
+                    date DATE,
+                    time TIME,
+                    venue VARCHAR(100),
+                    organizer VARCHAR(100),
+                    capacity INTEGER,
+                    registered_count INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS registrations (
+                    id SERIAL PRIMARY KEY,
+                    student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+                    event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
+                    registration_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    qr_code_path TEXT,
+                    checkin_time TIMESTAMP,
+                    attended BOOLEAN DEFAULT FALSE,
+                    UNIQUE(student_id, event_id)
+                )
+            """)
+            
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS staff (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(50) UNIQUE NOT NULL,
+                    password VARCHAR(100) NOT NULL,
+                    name VARCHAR(100) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS admins (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(50) UNIQUE NOT NULL,
+                    password VARCHAR(100) NOT NULL,
+                    name VARCHAR(100) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Insert default admin
+            cursor.execute("""
+                INSERT INTO admins (username, password, name) 
+                VALUES ('admin', 'admin123', 'System Administrator')
+                ON CONFLICT (username) DO NOTHING
+            """)
+            
+            # Insert default staff
+            cursor.execute("""
+                INSERT INTO staff (username, password, name) 
+                VALUES ('staff', 'staff123', 'Event Staff')
+                ON CONFLICT (username) DO NOTHING
+            """)
+            
+            conn.commit()
+            print("✅ All tables created successfully!")
+        else:
+            print("✅ Database tables already exist")
+        
+        cursor.close()
+        conn.close()
+        return True
+        
     except Exception as e:
-        print("Schema update warning:", str(e))
+        print(f"❌ Error checking database: {e}")
+        print(traceback.format_exc())
+        return False
 
 # Initialize database when app starts
+print("🚀 Starting application...")
 with app.app_context():
-    init_database()
-    update_database_schema()
+    if check_and_init_database():
+        print("✅ Database initialization complete")
+    else:
+        print("❌ Database initialization failed")
+
+# -----------------------
+# Debug route to check database status
+# -----------------------
+@app.route('/debug/db')
+def debug_db():
+    """Debug endpoint to check database status"""
+    try:
+        database_url = os.environ.get('DATABASE_URL', 'Not set')
+        masked_url = database_url
+        if database_url != 'Not set':
+            # Mask password in URL for security
+            if '@' in database_url:
+                parts = database_url.split('@')
+                user_part = parts[0]
+                if ':' in user_part:
+                    user_pass = user_part.split(':')
+                    if len(user_pass) > 2:
+                        masked_url = f"{user_pass[0]}:****@{parts[1]}"
+        
+        # Check tables
+        tables = {}
+        try:
+            tables['students'] = execute_query("SELECT COUNT(*) as count FROM students", fetch=True)
+            tables['events'] = execute_query("SELECT COUNT(*) as count FROM events", fetch=True)
+            tables['registrations'] = execute_query("SELECT COUNT(*) as count FROM registrations", fetch=True)
+            tables['staff'] = execute_query("SELECT COUNT(*) as count FROM staff", fetch=True)
+            tables['admins'] = execute_query("SELECT COUNT(*) as count FROM admins", fetch=True)
+        except Exception as e:
+            tables['error'] = str(e)
+        
+        # Get recent data
+        recent_students = execute_query("SELECT student_id, name FROM students ORDER BY id DESC LIMIT 5", fetchall=True) or []
+        recent_events = execute_query("SELECT title, date FROM events ORDER BY id DESC LIMIT 5", fetchall=True) or []
+        
+        return render_template('debug_db.html',
+                             database_url=masked_url,
+                             tables=tables,
+                             recent_students=recent_students,
+                             recent_events=recent_events)
+    except Exception as e:
+        return f"<h1>Error</h1><pre>{str(e)}</pre><pre>{traceback.format_exc()}</pre>"
 
 # -----------------------
 # Basic pages & auth flows
@@ -234,10 +302,14 @@ def register():
             return redirect(url_for('register'))
         
         # Insert new student
-        execute_query(
+        result = execute_query(
             "INSERT INTO students (student_id, name, email, password, department, year) VALUES (%s, %s, %s, %s, %s, %s)",
             (student_id, name, email, password, department, year)
         )
+        
+        if result is None:
+            flash('Database error! Please try again.', 'error')
+            return redirect(url_for('register'))
         
         flash('Registration successful! Please login.', 'success')
         return redirect(url_for('login'))
@@ -279,7 +351,7 @@ def dashboard():
         "SELECT * FROM events WHERE date >= %s ORDER BY date, time", 
         (today,), 
         fetchall=True
-    )
+    ) or []
     
     # Get student's registrations
     registrations = execute_query(
@@ -289,7 +361,7 @@ def dashboard():
            WHERE r.student_id = %s""",
         (session['student_id'],),
         fetchall=True
-    )
+    ) or []
     
     return render_template('dashboard.html', 
                          student_name=session['student_name'],
@@ -304,13 +376,13 @@ def events():
     
     # Get all upcoming events
     today = datetime.now().strftime('%Y-%m-%d')
-    events = execute_query(
+    events_list = execute_query(
         "SELECT * FROM events WHERE date >= %s ORDER BY date, time", 
         (today,), 
         fetchall=True
-    )
+    ) or []
     
-    return render_template('events.html', events=events)
+    return render_template('events.html', events=events_list)
 
 # Event details and registration
 @app.route('/event/<int:event_id>')
@@ -337,7 +409,7 @@ def event_details(event_id):
     
     return render_template('event_details.html', event=event, registration=registration)
 
-# Register for event
+# Register for event - FIXED: Uses base64 for QR codes
 @app.route('/register_event/<int:event_id>')
 def register_event(event_id):
     if 'student_id' not in session:
@@ -405,20 +477,16 @@ Registration ID: {student['student_id']}_{event_id}
         # Create QR code image
         qr_img = qr.make_image(fill_color="black", back_color="white")
         
-        # Ensure QR code directory exists
-        qr_dir = app.config['UPLOAD_FOLDER']
-        if not os.path.exists(qr_dir):
-            os.makedirs(qr_dir)
+        # Save QR code to BytesIO (in memory)
+        buffer = BytesIO()
+        qr_img.save(buffer, format="PNG")
+        buffer.seek(0)
         
-        # Save QR code
-        qr_filename = f"qr_{student['student_id']}_{event_id}.png"
-        qr_path = os.path.join(qr_dir, qr_filename)
-        qr_img.save(qr_path)
+        # Convert to base64 for storage
+        qr_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         
-        print(f"QR code saved at: {qr_path}")  # Debug print
-        
-        # Store relative path in database for web access
-        qr_web_path = f"qrcodes/{qr_filename}"
+        # Store base64 in database
+        qr_web_path = f"data:image/png;base64,{qr_base64}"
         
         # Register for event
         execute_query(
@@ -436,8 +504,8 @@ Registration ID: {student['student_id']}_{event_id}
         return redirect(url_for('event_details', event_id=event_id))
         
     except Exception as e:
-        print(f"Error generating QR code: {str(e)}")  # Debug print
-        print(traceback.format_exc())  # Detailed error traceback
+        print(f"Error in register_event: {str(e)}")
+        print(traceback.format_exc())
         flash('Error generating QR code. Please try again.', 'error')
         return redirect(url_for('event_details', event_id=event_id))
 
@@ -455,7 +523,7 @@ def my_registrations():
            ORDER BY e.date, e.time""",
         (session['student_id'],),
         fetchall=True
-    )
+    ) or []
     
     return render_template('my_registrations.html', registrations=registrations)
 
@@ -489,7 +557,7 @@ def staff_dashboard():
         return redirect(url_for('staff_login'))
     return render_template('staff_dashboard.html')
 
-# Staff QR verification
+# Staff QR verification - FIXED: Handles base64 QR codes
 @app.route('/staff/verify', methods=['POST'])
 def staff_verify():
     if 'staff_id' not in session:
@@ -698,7 +766,7 @@ def staff_verify_page():
            ORDER BY r.checkin_time DESC 
            LIMIT 10""",
         fetchall=True
-    )
+    ) or []
     
     return render_template('staff_verify.html', recent_verifications=recent_verifications)
 
@@ -723,9 +791,9 @@ def admin_dashboard():
     if 'admin_id' not in session:
         return redirect(url_for('admin_login'))
 
-    total_events = execute_query("SELECT COUNT(*) as count FROM events", fetch=True)['count']
-    total_students = execute_query("SELECT COUNT(*) as count FROM students", fetch=True)['count']
-    total_registrations = execute_query("SELECT COUNT(*) as count FROM registrations", fetch=True)['count']
+    total_events = execute_query("SELECT COUNT(*) as count FROM events", fetch=True)
+    total_students = execute_query("SELECT COUNT(*) as count FROM students", fetch=True)
+    total_registrations = execute_query("SELECT COUNT(*) as count FROM registrations", fetch=True)
 
     recent_events = execute_query("SELECT * FROM events ORDER BY created_at DESC LIMIT 5", fetchall=True) or []
     recent_verifications = execute_query(
@@ -741,9 +809,9 @@ def admin_dashboard():
 
     return render_template('admin_dashboard.html',
                            admin_name=session.get('admin_name'),
-                           total_events=total_events,
-                           total_students=total_students,
-                           total_registrations=total_registrations,
+                           total_events=total_events['count'] if total_events else 0,
+                           total_students=total_students['count'] if total_students else 0,
+                           total_registrations=total_registrations['count'] if total_registrations else 0,
                            recent_events=recent_events,
                            recent_verifications=recent_verifications)
 
@@ -770,11 +838,15 @@ def create_event():
         organizer = request.form['organizer']
         capacity = request.form['capacity']
 
-        execute_query("""
+        result = execute_query("""
             INSERT INTO events 
             (title, description, date, time, venue, organizer, capacity, registered_count, created_at) 
             VALUES (%s, %s, %s, %s, %s, %s, %s, 0, CURRENT_TIMESTAMP)
         """, (title, description, date, time, venue, organizer, capacity))
+        
+        if result is None:
+            flash('Database error! Event not created.', 'error')
+            return redirect(url_for('create_event'))
 
         flash('Event created successfully!', 'success')
         return redirect(url_for('admin_events'))
@@ -848,7 +920,7 @@ def event_registrations(event_id):
     return render_template('event_registrations.html', event=event, registrations=registrations)
 
 # -----------------------
-# Export helpers (same as before, but with PostgreSQL compatibility)
+# Export helpers
 # -----------------------
 def make_dataframe_from_regs(regs):
     """Return a pandas DataFrame from registration records."""
@@ -1076,8 +1148,10 @@ def admin_mark_attendance():
 
 
 # -----------------------
-# Student Logout - Add this new route
+# Logout Routes
 # -----------------------
+
+# Student logout
 @app.route('/logout')
 def logout():
     # Clear student session data
@@ -1093,14 +1167,6 @@ def admin_logout():
     session.pop('admin_name', None)
     flash('Admin logged out successfully!', 'success')
     return redirect(url_for('admin_login'))
-
-# Staff logout
-@app.route('/staff/logout')
-def staff_logout():
-    session.pop('staff_id', None)
-    session.pop('staff_name', None)
-    flash('Staff logged out successfully!', 'success')
-    return redirect(url_for('staff_login'))
 
 # Run
 if __name__ == '__main__':
