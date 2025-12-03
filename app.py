@@ -1146,12 +1146,18 @@ def admin_mark_attendance():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
+<<<<<<< HEAD
 
 # -----------------------
 # Logout Routes
 # -----------------------
 
 # Student logout
+=======
+# -----------------------
+# Student Logout - Add this new route
+# -----------------------
+>>>>>>> 5fcf06c7a616f04a973d34835cf85ac0694be57e
 @app.route('/logout')
 def logout():
     # Clear student session data
@@ -1168,7 +1174,12 @@ def admin_logout():
     flash('Admin logged out successfully!', 'success')
     return redirect(url_for('admin_login'))
 
+
 # Run
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
+<<<<<<< HEAD
     app.run(host='0.0.0.0', port=port, debug=False)
+=======
+    app.run(host='0.0.0.0', port=port, debug=False)
+>>>>>>> 5fcf06c7a616f04a973d34835cf85ac0694be57e
