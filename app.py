@@ -712,6 +712,89 @@ def event_registrations(event_id):
 
     return render_template('event_registrations.html', event=event, registrations=registrations)
 
+# -----------------------
+# Admin: Export All Attendance
+# -----------------------
+@app.route('/admin/export/attendance_all')
+def export_attendance_all():
+    if 'admin_id' not in session:
+        return redirect(url_for('admin_login'))
+
+    fmt = request.args.get('format', 'csv').lower()
+    
+    # Fetch all attendance records
+    query = """SELECT r.*, s.name, s.student_id, s.department, s.year, e.title as event_title, e.date as event_date
+               FROM registrations r
+               JOIN students s ON r.student_id = s.id
+               JOIN events e ON r.event_id = e.id
+               WHERE r.attended = TRUE
+               ORDER BY r.checkin_time DESC"""
+    
+    records = execute_query(query, fetchall=True) or []
+
+    # Convert to a DataFrame
+    rows = []
+    for r in records:
+        rows.append({
+            'Student Name': r.get('name', ''),
+            'Student ID': r.get('student_id', ''),
+            'Department': r.get('department', ''),
+            'Year': r.get('year', ''),
+            'Event Title': r.get('event_title', ''),
+            'Event Date': r.get('event_date', ''),
+            'Check-in Time': r.get('checkin_time', '') if r.get('checkin_time') else '',
+        })
+    
+    if not rows:
+        flash('No attendance records found!', 'warning')
+        return redirect(url_for('admin_dashboard'))
+    
+    df = pd.DataFrame(rows)
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    base_filename = f"attendance_all_{timestamp}"
+    
+    if fmt == 'csv':
+        output = io.StringIO()
+        df.to_csv(output, index=False, encoding='utf-8')
+        csv_bytes = ('\ufeff' + output.getvalue()).encode('utf-8')
+        filename = f"{base_filename}.csv"
+        return Response(csv_bytes, mimetype="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f"attachment;filename={filename}"})
+    
+    elif fmt == 'excel':
+        try:
+            excel_io = dataframe_to_excel_bytes(df, sheet_name='Attendance')
+            filename = f"{base_filename}.xlsx"
+            return send_file(excel_io, as_attachment=True, download_name=filename,
+                             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        except Exception:
+            flash('Excel export not available. Falling back to CSV.', 'warning')
+            output = io.StringIO()
+            df.to_csv(output, index=False, encoding='utf-8')
+            csv_bytes = ('\ufeff' + output.getvalue()).encode('utf-8')
+            filename = f"{base_filename}.csv"
+            return Response(csv_bytes, mimetype="text/csv; charset=utf-8",
+                            headers={"Content-Disposition": f"attachment;filename={filename}"})
+    
+    elif fmt == 'pdf':
+        try:
+            pdf_io = dataframe_to_pdf_bytes(df, title='Attendance Records')
+            filename = f"{base_filename}.pdf"
+            return send_file(pdf_io, as_attachment=True, download_name=filename, mimetype='application/pdf')
+        except Exception:
+            flash('PDF export not available. Falling back to CSV.', 'warning')
+            output = io.StringIO()
+            df.to_csv(output, index=False, encoding='utf-8')
+            csv_bytes = ('\ufeff' + output.getvalue()).encode('utf-8')
+            filename = f"{base_filename}.csv"
+            return Response(csv_bytes, mimetype="text/csv; charset=utf-8",
+                            headers={"Content-Disposition": f"attachment;filename={filename}"})
+    
+    else:
+        flash('Unknown format', 'error')
+        return redirect(url_for('admin_dashboard'))
+
 # Debug route
 @app.route('/debug/db')
 def debug_db():
@@ -736,6 +819,71 @@ def debug_db():
                              recent_events=recent_events)
     except Exception as e:
         return f"Error: {str(e)}<br><pre>{traceback.format_exc()}</pre>"
+
+
+# -----------------------
+# Export helpers
+# -----------------------
+def make_dataframe_from_regs(regs):
+    """Return a pandas DataFrame from registration records."""
+    rows = []
+    for r in regs:
+        rows.append({
+            'Student Name': r.get('name', ''),
+            'Student ID': r.get('student_id', ''),
+            'Department': r.get('department', ''),
+            'Year': r.get('year', ''),
+            'Registration Time': r.get('registration_time', ''),
+            'Attended': 'Yes' if r.get('attended') else 'No',
+            'Check-in Time': r.get('checkin_time', '') if r.get('checkin_time') else ''
+        })
+    return pd.DataFrame(rows)
+
+def dataframe_to_excel_bytes(df, sheet_name='Sheet1'):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name=sheet_name)
+    output.seek(0)
+    return output
+
+def dataframe_to_pdf_bytes(df, title='Export'):
+    if not REPORTLAB_AVAILABLE:
+        raise ImportError("reportlab not installed")
+
+    output = BytesIO()
+    doc = SimpleDocTemplate(output, pagesize=landscape(A4),
+                            leftMargin=15, rightMargin=15,
+                            topMargin=20, bottomMargin=20)
+
+    styles = getSampleStyleSheet()
+    elements = [Paragraph(title, styles['Heading2']), Spacer(1, 12)]
+
+    # Convert DataFrame to list of lists
+    data = [list(df.columns)]
+    for _, row in df.iterrows():
+        data.append([str(x) if not pd.isna(x) else '' for x in row])
+
+    table = Table(data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c7be5')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('GRID', (0, 0), (-1, -1), 0.3, colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('FONTSIZE', (0, 0), (-1, -1), 7),
+    ]))
+
+    elements.append(table)
+    doc.build(elements)
+
+    output.seek(0)
+    return output
+
+def dataframe_to_csv_bytes(df):
+    output = io.StringIO()
+    df.to_csv(output, index=False, encoding='utf-8')
+    output.seek(0)
+    return output.getvalue()
 
 # Logout routes
 @app.route('/logout')
