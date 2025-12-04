@@ -588,11 +588,20 @@ def admin_dashboard():
     if 'admin_id' not in session:
         return redirect(url_for('admin_login'))
 
-    total_events = execute_query("SELECT COUNT(*) as count FROM events", fetch=True) or {'count': 0}
-    total_students = execute_query("SELECT COUNT(*) as count FROM students", fetch=True) or {'count': 0}
-    total_registrations = execute_query("SELECT COUNT(*) as count FROM registrations", fetch=True) or {'count': 0}
+    total_events = execute_query("SELECT COUNT(*) as count FROM events", fetch=True)
+    total_students = execute_query("SELECT COUNT(*) as count FROM students", fetch=True)
+    total_registrations = execute_query("SELECT COUNT(*) as count FROM registrations", fetch=True)
 
     recent_events = execute_query("SELECT * FROM events ORDER BY created_at DESC LIMIT 5", fetchall=True) or []
+    
+    # Format dates for display
+    for event in recent_events:
+        if event.get('date'):
+            event['date_str'] = event['date'].strftime('%Y-%m-%d')
+            event['date_day'] = event['date'].strftime('%d')
+            event['date_month'] = event['date'].strftime('%m')
+            event['date_year'] = event['date'].strftime('%Y')
+
     recent_verifications = execute_query(
         """SELECT s.name as student_name, s.student_id, e.title as event_title, r.checkin_time
            FROM registrations r
@@ -606,12 +615,11 @@ def admin_dashboard():
 
     return render_template('admin_dashboard.html',
                            admin_name=session.get('admin_name'),
-                           total_events=total_events['count'],
-                           total_students=total_students['count'],
-                           total_registrations=total_registrations['count'],
+                           total_events=total_events['count'] if total_events else 0,
+                           total_students=total_students['count'] if total_students else 0,
+                           total_registrations=total_registrations['count'] if total_registrations else 0,
                            recent_events=recent_events,
                            recent_verifications=recent_verifications)
-
 # Admin events
 @app.route('/admin/events')
 def admin_events():
