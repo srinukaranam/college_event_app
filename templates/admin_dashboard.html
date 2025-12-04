@@ -94,10 +94,11 @@
                         {% for event in recent_events %}
                         <div class="list-group-item border-0 py-3 px-4 d-flex align-items-start">
                             <div class="me-3 text-center">
-                                <div class="bg-primary text-white rounded-2 p-2">
-                                    <small class="d-block fw-bold">{{ event.date.split('-')[2] }}</small>
-                                    <small class="d-block">{{ event.date.split('-')[1] }}/{{ event.date.split('-')[0] }}</small>
-                                </div>
+    <div class="bg-primary text-white rounded-2 p-2">
+        <small class="d-block fw-bold">{{ event.date_day }}</small>
+        <small class="d-block">{{ event.date_month }}/{{ event.date_year }}</small>
+    </div>
+</div>
                             </div>
                             <div class="flex-fill">
                                 <div class="d-flex justify-content-between">
