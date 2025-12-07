@@ -34,6 +34,69 @@ app.config['UPLOAD_FOLDER'] = 'static/qrcodes'
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
+
+from datetime import datetime
+
+# Add these Jinja2 filters for date handling
+@app.template_filter('format_date')
+def format_date(date, format_str='%Y-%m-%d'):
+    """Format a date in Jinja2 templates"""
+    if isinstance(date, (datetime.date, datetime.datetime)):
+        return date.strftime(format_str)
+    elif isinstance(date, str):
+        try:
+            # Try to parse string date
+            date_obj = datetime.strptime(date, '%Y-%m-%d').date()
+            return date_obj.strftime(format_str)
+        except:
+            return date
+    return str(date)
+
+@app.template_filter('format_datetime')
+def format_datetime(dt, format_str='%Y-%m-%d %H:%M:%S'):
+    """Format a datetime in Jinja2 templates"""
+    if isinstance(dt, (datetime.date, datetime.datetime)):
+        return dt.strftime(format_str)
+    elif isinstance(dt, str):
+        try:
+            # Try to parse string datetime
+            dt_obj = datetime.strptime(dt, '%Y-%m-%d %H:%M:%S')
+            return dt_obj.strftime(format_str)
+        except:
+            return dt
+    return str(dt)
+
+@app.template_filter('get_day')
+def get_day(date):
+    """Get day from date"""
+    if isinstance(date, (datetime.date, datetime.datetime)):
+        return date.strftime('%d')
+    elif isinstance(date, str):
+        try:
+            date_obj = datetime.strptime(date, '%Y-%m-%d').date()
+            return date_obj.strftime('%d')
+        except:
+            return '??'
+    return '??'
+
+@app.template_filter('get_month_year')
+def get_month_year(date):
+    """Get month/year from date"""
+    if isinstance(date, (datetime.date, datetime.datetime)):
+        return date.strftime('%m/%Y')
+    elif isinstance(date, str):
+        try:
+            date_obj = datetime.strptime(date, '%Y-%m-%d').date()
+            return date_obj.strftime('%m/%Y')
+        except:
+            return '??/????'
+    return '??/????'
+
+# Add datetime to Jinja2 context
+@app.context_processor
+def inject_datetime():
+    return {'datetime': datetime}
+
 # -----------------------
 # Database Configuration with SSL for Render
 # -----------------------
