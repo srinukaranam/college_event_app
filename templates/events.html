@@ -13,7 +13,7 @@
                 <p class="card-text">{{ event.description }}</p>
                 <ul class="list-group list-group-flush">
                     <li class="list-group-item">
-                        <strong>Date:</strong> {{ event.date }} at {{ event.time }}
+                        <strong>Date:</strong> {{ event.date.strftime('%Y-%m-%d') }} at {{ event.time }}
                     </li>
                     <li class="list-group-item">
                         <strong>Venue:</strong> {{ event.venue }}
