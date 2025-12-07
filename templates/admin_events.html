@@ -84,7 +84,7 @@
                             </td>
                             <td>
                                 <div class="text-nowrap">
-                                    <div class="fw-semibold">{{ event.date }}</div>
+                                    <div class="fw-semibold">{{ event.date.strftime('%Y-%m-%d') }}</div>
                                     <small class="text-muted">{{ event.time }}</small>
                                 </div>
                             </td>
@@ -103,14 +103,14 @@
                                 <small class="fw-semibold">{{ event.registered_count }}/{{ event.capacity }}</small>
                             </td>
                             <td class="text-center">
-                                {% set today = now.split(' ')[0] if now else '2024-01-01' %}
-                                {% if event.date < today %}
-                                    <span class="badge bg-secondary rounded-pill">Past</span>
-                                {% elif event.registered_count >= event.capacity %}
-                                    <span class="badge bg-danger rounded-pill">Full</span>
-                                {% else %}
-                                    <span class="badge bg-success rounded-pill">Active</span>
-                                {% endif %}
+                                {% set today = datetime.now().date() %}
+{% if event.date < today %}
+    <span class="badge bg-secondary rounded-pill">Past</span>
+{% elif event.registered_count >= event.capacity %}
+    <span class="badge bg-danger rounded-pill">Full</span>
+{% else %}
+    <span class="badge bg-success rounded-pill">Active</span>
+{% endif %}
                             </td>
                             <td class="text-end pe-4">
                                 <div class="btn-group">
