@@ -269,6 +269,7 @@ def dashboard():
     if 'student_id' not in session:
         return redirect(url_for('login'))
     
+    # Get upcoming events
     today = datetime.now().strftime('%Y-%m-%d')
     upcoming_events = execute_query(
         "SELECT * FROM events WHERE date >= %s ORDER BY date, time", 
@@ -276,6 +277,30 @@ def dashboard():
         fetchall=True
     ) or []
     
+    # Format dates consistently for template
+    for event in upcoming_events:
+        if event.get('date'):
+            # Convert date to string in consistent format if it's a date object
+            if isinstance(event['date'], (datetime.date, datetime.datetime)):
+                event['date_str'] = event['date'].strftime('%Y-%m-%d')
+                event['date_day'] = event['date'].strftime('%d')
+                event['date_month'] = event['date'].strftime('%m')
+                event['date_year'] = event['date'].strftime('%Y')
+            else:
+                # Already a string
+                event['date_str'] = event['date']
+                # Parse string date if needed
+                try:
+                    date_obj = datetime.strptime(event['date'], '%Y-%m-%d').date()
+                    event['date_day'] = date_obj.strftime('%d')
+                    event['date_month'] = date_obj.strftime('%m')
+                    event['date_year'] = date_obj.strftime('%Y')
+                except:
+                    event['date_day'] = '??'
+                    event['date_month'] = '??'
+                    event['date_year'] = '??'
+    
+    # Get student's registrations
     registrations = execute_query(
         """SELECT e.*, r.registration_time, r.qr_code_path 
            FROM events e 
@@ -289,7 +314,6 @@ def dashboard():
                          student_name=session['student_name'],
                          upcoming_events=upcoming_events,
                          registrations=registrations)
-
 # Events page
 @app.route('/events')
 def events():
