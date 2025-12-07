@@ -86,8 +86,8 @@
                             </td>
                             <td>
                                 <div class="text-nowrap">
-                                    <div class="fw-semibold">{{ reg.registration_time.split(' ')[0] }}</div>
-                                    <small class="text-muted">{{ reg.registration_time.split(' ')[1] if reg.registration_time.split(' ')|length > 1 else '' }}</small>
+                                    <div class="fw-semibold">{{ reg.registration_time.strftime('%Y-%m-%d') }}</div>
+                                    <small class="text-muted">{{ reg.registration_time.strftime('%H:%M:%S') }}</small>
                                 </div>
                             </td>
                             <td class="text-center">
