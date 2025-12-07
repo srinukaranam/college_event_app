@@ -35,9 +35,9 @@
                                 <div class="d-flex align-items-start">
                                     <div class="event-date me-4 text-center">
                                         <div class="bg-primary text-white rounded-2 p-2">
-                                            <small class="d-block fw-bold">{{ event.date.split('-')[2] }}</small>
-                                            <small class="d-block">{{ event.date.split('-')[1] }}/{{ event.date.split('-')[0] }}</small>
-                                        </div>
+    <small class="d-block fw-bold">{{ event.date.strftime('%d') }}</small>
+    <small class="d-block">{{ event.date.strftime('%m/%Y') }}</small>
+</div>
                                         <small class="text-muted mt-1 d-block">{{ event.time }}</small>
                                     </div>
                                     <div class="flex-grow-1">
