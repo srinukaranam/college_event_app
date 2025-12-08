@@ -86,8 +86,13 @@
                             </td>
                             <td>
                                 <div class="text-nowrap">
+<<<<<<< HEAD
                                     <div class="fw-semibold">{{ reg.registration_time|format_datetime('%Y-%m-%d') }}</div>
 <small class="text-muted">{{ reg.registration_time|format_datetime('%H:%M:%S') }}</small>
+=======
+                                    <div class="fw-semibold">{{ reg.registration_time.strftime('%Y-%m-%d') }}</div>
+                                    <small class="text-muted">{{ reg.registration_time.strftime('%H:%M:%S') }}</small>
+>>>>>>> a7e4028925f55398843262ef75d223259cdb2b51
                                 </div>
                             </td>
                             <td class="text-center">

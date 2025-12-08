@@ -35,8 +35,13 @@
                                 <div class="d-flex align-items-start">
                                     <div class="event-date me-4 text-center">
                                         <div class="bg-primary text-white rounded-2 p-2">
+<<<<<<< HEAD
     <small class="d-block fw-bold">{{ event.date|get_day }}</small>
 <small class="d-block">{{ event.date|get_month_year }}</small>
+=======
+    <small class="d-block fw-bold">{{ event.date.strftime('%d') }}</small>
+    <small class="d-block">{{ event.date.strftime('%m/%Y') }}</small>
+>>>>>>> a7e4028925f55398843262ef75d223259cdb2b51
 </div>
                                         <small class="text-muted mt-1 d-block">{{ event.time }}</small>
                                     </div>
