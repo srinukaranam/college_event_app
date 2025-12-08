@@ -5,7 +5,7 @@ import os
 import traceback
 import psycopg2
 import base64
-from datetime import datetime
+from datetime import datetime, date
 from io import BytesIO
 
 from flask import (
@@ -34,12 +34,10 @@ app.config['UPLOAD_FOLDER'] = 'static/qrcodes'
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
+# -----------------------
+# Jinja2 Filters for Date Handling
+# -----------------------
 
-from datetime import datetime, date
-import datetime as dt
-
-# Add these Jinja2 filters for date handling
-# Add Jinja2 filters for date handling
 @app.template_filter('format_date')
 def format_date_filter(value, format_str='%Y-%m-%d'):
     """Format a date in Jinja2 templates"""
@@ -79,54 +77,12 @@ def get_day_filter(value):
     elif isinstance(value, str):
         try:
             date_obj = datetime.strptime(value, '%Y-%m-%d').date()
-
-import datetime as dt 
-
-# Add these Jinja2 filters for date handling
-@app.template_filter('format_date')
-def format_date(date, format_str='%Y-%m-%d'):
-    """Format a date in Jinja2 templates"""
-    if isinstance(date, (datetime.date, datetime.datetime)):
-        return date.strftime(format_str)
-    elif isinstance(date, str):
-        try:
-            # Try to parse string date
-            date_obj = datetime.strptime(date, '%Y-%m-%d').date()
-            return date_obj.strftime(format_str)
-        except:
-            return date
-    return str(date)
-
-@app.template_filter('format_datetime')
-def format_datetime(dt, format_str='%Y-%m-%d %H:%M:%S'):
-    """Format a datetime in Jinja2 templates"""
-    if isinstance(dt, (datetime.date, datetime.datetime)):
-        return dt.strftime(format_str)
-    elif isinstance(dt, str):
-        try:
-            # Try to parse string datetime
-            dt_obj = datetime.strptime(dt, '%Y-%m-%d %H:%M:%S')
-            return dt_obj.strftime(format_str)
-        except:
-            return dt
-    return str(dt)
-
-@app.template_filter('get_day')
-def get_day(date):
-    """Get day from date"""
-    if isinstance(date, (datetime.date, datetime.datetime)):
-        return date.strftime('%d')
-    elif isinstance(date, str):
-        try:
-            date_obj = datetime.strptime(date, '%Y-%m-%d').date()
-
             return date_obj.strftime('%d')
         except:
             return '??'
     return '??'
 
 @app.template_filter('get_month_year')
-
 def get_month_year_filter(value):
     """Get month/year from date"""
     if isinstance(value, (date, datetime)):
@@ -134,15 +90,6 @@ def get_month_year_filter(value):
     elif isinstance(value, str):
         try:
             date_obj = datetime.strptime(value, '%Y-%m-%d').date()
-
-def get_month_year(date):
-    """Get month/year from date"""
-    if isinstance(date, (datetime.date, datetime.datetime)):
-        return date.strftime('%m/%Y')
-    elif isinstance(date, str):
-        try:
-            date_obj = datetime.strptime(date, '%Y-%m-%d').date()
-
             return date_obj.strftime('%m/%Y')
         except:
             return '??/????'
@@ -396,29 +343,6 @@ def dashboard():
         fetchall=True
     ) or []
     
-    # Format dates consistently for template
-    for event in upcoming_events:
-        if event.get('date'):
-            # Convert date to string in consistent format if it's a date object
-            if isinstance(event['date'], (datetime.date, datetime.datetime)):
-                event['date_str'] = event['date'].strftime('%Y-%m-%d')
-                event['date_day'] = event['date'].strftime('%d')
-                event['date_month'] = event['date'].strftime('%m')
-                event['date_year'] = event['date'].strftime('%Y')
-            else:
-                # Already a string
-                event['date_str'] = event['date']
-                # Parse string date if needed
-                try:
-                    date_obj = datetime.strptime(event['date'], '%Y-%m-%d').date()
-                    event['date_day'] = date_obj.strftime('%d')
-                    event['date_month'] = date_obj.strftime('%m')
-                    event['date_year'] = date_obj.strftime('%Y')
-                except:
-                    event['date_day'] = '??'
-                    event['date_month'] = '??'
-                    event['date_year'] = '??'
-    
     # Get student's registrations
     registrations = execute_query(
         """SELECT e.*, r.registration_time, r.qr_code_path 
@@ -433,6 +357,7 @@ def dashboard():
                          student_name=session['student_name'],
                          upcoming_events=upcoming_events,
                          registrations=registrations)
+
 # Events page
 @app.route('/events')
 def events():
@@ -737,14 +662,6 @@ def admin_dashboard():
 
     recent_events = execute_query("SELECT * FROM events ORDER BY created_at DESC LIMIT 5", fetchall=True) or []
     
-    # Format dates for display
-    for event in recent_events:
-        if event.get('date'):
-            event['date_str'] = event['date'].strftime('%Y-%m-%d')
-            event['date_day'] = event['date'].strftime('%d')
-            event['date_month'] = event['date'].strftime('%m')
-            event['date_year'] = event['date'].strftime('%Y')
-
     recent_verifications = execute_query(
         """SELECT s.name as student_name, s.student_id, e.title as event_title, r.checkin_time
            FROM registrations r
@@ -763,6 +680,7 @@ def admin_dashboard():
                            total_registrations=total_registrations['count'] if total_registrations else 0,
                            recent_events=recent_events,
                            recent_verifications=recent_verifications)
+
 # Admin events
 @app.route('/admin/events')
 def admin_events():
