@@ -35,6 +35,74 @@ app.config['UPLOAD_FOLDER'] = 'static/qrcodes'
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
+
+from datetime import datetime, date
+import datetime as dt
+
+# Add these Jinja2 filters for date handling
+# Add Jinja2 filters for date handling
+@app.template_filter('format_date')
+def format_date_filter(value, format_str='%Y-%m-%d'):
+    """Format a date in Jinja2 templates"""
+    if isinstance(value, (date, datetime)):
+        return value.strftime(format_str)
+    elif isinstance(value, str):
+        try:
+            # Try to parse string date
+            date_obj = datetime.strptime(value, '%Y-%m-%d')
+            return date_obj.strftime(format_str)
+        except:
+            return value
+    return str(value)
+
+@app.template_filter('format_datetime')
+def format_datetime_filter(value, format_str='%Y-%m-%d %H:%M:%S'):
+    """Format a datetime in Jinja2 templates"""
+    if isinstance(value, (datetime, date)):
+        return value.strftime(format_str)
+    elif isinstance(value, str):
+        try:
+            # Try to parse string datetime
+            if ' ' in value:
+                dt_obj = datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
+            else:
+                dt_obj = datetime.strptime(value, '%Y-%m-%d')
+            return dt_obj.strftime(format_str)
+        except:
+            return value
+    return str(value)
+
+@app.template_filter('get_day')
+def get_day_filter(value):
+    """Get day from date"""
+    if isinstance(value, (date, datetime)):
+        return value.strftime('%d')
+    elif isinstance(value, str):
+        try:
+            date_obj = datetime.strptime(value, '%Y-%m-%d').date()
+            return date_obj.strftime('%d')
+        except:
+            return '??'
+    return '??'
+
+@app.template_filter('get_month_year')
+def get_month_year_filter(value):
+    """Get month/year from date"""
+    if isinstance(value, (date, datetime)):
+        return value.strftime('%m/%Y')
+    elif isinstance(value, str):
+        try:
+            date_obj = datetime.strptime(value, '%Y-%m-%d').date()
+            return date_obj.strftime('%m/%Y')
+        except:
+            return '??/????'
+    return '??/????'
+
+# Add datetime to Jinja2 context
+@app.context_processor
+def inject_datetime():
+    return {'datetime': datetime}
+
 # -----------------------
 # Database Configuration with SSL for Render
 # -----------------------
@@ -796,6 +864,15 @@ def admin_dashboard():
     total_registrations = execute_query("SELECT COUNT(*) as count FROM registrations", fetch=True)
 
     recent_events = execute_query("SELECT * FROM events ORDER BY created_at DESC LIMIT 5", fetchall=True) or []
+    
+    # Format dates for display
+    for event in recent_events:
+        if event.get('date'):
+            event['date_str'] = event['date'].strftime('%Y-%m-%d')
+            event['date_day'] = event['date'].strftime('%d')
+            event['date_month'] = event['date'].strftime('%m')
+            event['date_year'] = event['date'].strftime('%Y')
+
     recent_verifications = execute_query(
         """SELECT s.name as student_name, s.student_id, e.title as event_title, r.checkin_time
            FROM registrations r

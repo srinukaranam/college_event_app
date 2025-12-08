@@ -44,7 +44,7 @@
                                     <div class="d-flex align-items-center mb-2">
                                         <i class="fas fa-calendar-day text-primary me-3"></i>
                                         <div>
-                                            <div class="fw-semibold">{{ event.date }}</div>
+                                            <div class="fw-semibold">{{ event.date|format_date }}</div>
                                             <small class="text-muted">Event Date</small>
                                         </div>
                                     </div>
@@ -187,7 +187,7 @@
                     <div class="event-highlights mb-4">
                         <div class="d-flex justify-content-around text-center">
                             <div>
-                                <div class="text-primary fw-bold">{{ event.date.split('-')[2] }}</div>
+                                <div class="text-primary fw-bold">{{ event.date|get_day }}</div>
                                 <small class="text-muted">Day</small>
                             </div>
                             <div>

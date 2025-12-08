@@ -113,7 +113,7 @@
                             <div class="registration-meta">
                                 <small class="text-muted">
                                     <i class="fas fa-ticket-alt me-1"></i>
-                                    Registered on {{ registration.registration_time.split(' ')[0] }}
+                                    Registered on {{ registration.registration_time|format_datetime('%Y-%m-%d') }}
                                 </small>
                             </div>
                         </div>
