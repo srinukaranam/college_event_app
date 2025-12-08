@@ -35,7 +35,8 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
 
-from datetime import datetime
+from datetime import datetime, date
+import datetime as dt 
 
 # Add these Jinja2 filters for date handling
 @app.template_filter('format_date')
