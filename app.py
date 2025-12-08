@@ -36,7 +36,6 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
 
 
 from datetime import datetime, date
-<<<<<<< HEAD
 import datetime as dt
 
 # Add these Jinja2 filters for date handling
@@ -80,7 +79,7 @@ def get_day_filter(value):
     elif isinstance(value, str):
         try:
             date_obj = datetime.strptime(value, '%Y-%m-%d').date()
-=======
+
 import datetime as dt 
 
 # Add these Jinja2 filters for date handling
@@ -120,14 +119,14 @@ def get_day(date):
     elif isinstance(date, str):
         try:
             date_obj = datetime.strptime(date, '%Y-%m-%d').date()
->>>>>>> a7e4028925f55398843262ef75d223259cdb2b51
+
             return date_obj.strftime('%d')
         except:
             return '??'
     return '??'
 
 @app.template_filter('get_month_year')
-<<<<<<< HEAD
+
 def get_month_year_filter(value):
     """Get month/year from date"""
     if isinstance(value, (date, datetime)):
@@ -135,7 +134,7 @@ def get_month_year_filter(value):
     elif isinstance(value, str):
         try:
             date_obj = datetime.strptime(value, '%Y-%m-%d').date()
-=======
+
 def get_month_year(date):
     """Get month/year from date"""
     if isinstance(date, (datetime.date, datetime.datetime)):
@@ -143,7 +142,7 @@ def get_month_year(date):
     elif isinstance(date, str):
         try:
             date_obj = datetime.strptime(date, '%Y-%m-%d').date()
->>>>>>> a7e4028925f55398843262ef75d223259cdb2b51
+
             return date_obj.strftime('%m/%Y')
         except:
             return '??/????'
