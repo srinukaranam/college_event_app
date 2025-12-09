@@ -20,11 +20,10 @@ import pandas as pd
 try:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib.units import mm
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
     from reportlab.lib.styles import getSampleStyleSheet
     REPORTLAB_AVAILABLE = True
-except Exception:
+except ImportError:
     REPORTLAB_AVAILABLE = False
 
 app = Flask(__name__)
@@ -801,6 +800,10 @@ def export_attendance_all():
     
     records = execute_query(query, fetchall=True) or []
 
+    if not records:
+        flash('No attendance records found!', 'warning')
+        return redirect(url_for('admin_dashboard'))
+    
     # Convert to a DataFrame
     rows = []
     for r in records:
@@ -811,12 +814,8 @@ def export_attendance_all():
             'Year': r.get('year', ''),
             'Event Title': r.get('event_title', ''),
             'Event Date': r.get('event_date', ''),
-            'Check-in Time': r.get('checkin_time', '') if r.get('checkin_time') else '',
+            'Check-in Time': str(r.get('checkin_time', '')) if r.get('checkin_time') else '',
         })
-    
-    if not rows:
-        flash('No attendance records found!', 'warning')
-        return redirect(url_for('admin_dashboard'))
     
     df = pd.DataFrame(rows)
 
@@ -824,44 +823,101 @@ def export_attendance_all():
     base_filename = f"attendance_all_{timestamp}"
     
     if fmt == 'csv':
-        output = io.StringIO()
-        df.to_csv(output, index=False, encoding='utf-8')
-        csv_bytes = ('\ufeff' + output.getvalue()).encode('utf-8')
-        filename = f"{base_filename}.csv"
-        return Response(csv_bytes, mimetype="text/csv; charset=utf-8",
-                        headers={"Content-Disposition": f"attachment;filename={filename}"})
+        try:
+            # Create CSV
+            output = io.StringIO()
+            df.to_csv(output, index=False, encoding='utf-8')
+            csv_data = output.getvalue()
+            
+            # Create response
+            response = Response(
+                csv_data,
+                mimetype="text/csv",
+                headers={
+                    "Content-Disposition": f"attachment;filename={base_filename}.csv",
+                    "Content-Type": "text/csv; charset=utf-8"
+                }
+            )
+            return response
+            
+        except Exception as e:
+            flash(f'CSV export error: {str(e)}', 'error')
+            return redirect(url_for('admin_dashboard'))
     
     elif fmt == 'excel':
         try:
-            excel_io = dataframe_to_excel_bytes(df, sheet_name='Attendance')
-            filename = f"{base_filename}.xlsx"
-            return send_file(excel_io, as_attachment=True, download_name=filename,
-                             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        except Exception:
-            flash('Excel export not available. Falling back to CSV.', 'warning')
-            output = io.StringIO()
-            df.to_csv(output, index=False, encoding='utf-8')
-            csv_bytes = ('\ufeff' + output.getvalue()).encode('utf-8')
-            filename = f"{base_filename}.csv"
-            return Response(csv_bytes, mimetype="text/csv; charset=utf-8",
-                            headers={"Content-Disposition": f"attachment;filename={filename}"})
+            # Create Excel using BytesIO
+            output = BytesIO()
+            
+            # Use pandas ExcelWriter
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Attendance')
+            
+            output.seek(0)
+            
+            return send_file(
+                output,
+                as_attachment=True,
+                download_name=f"{base_filename}.xlsx",
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+            
+        except Exception as e:
+            flash(f'Excel export error: {str(e)}', 'error')
+            return redirect(url_for('admin_dashboard'))
     
     elif fmt == 'pdf':
+        if not REPORTLAB_AVAILABLE:
+            flash('PDF export requires ReportLab library. Please install: pip install reportlab', 'error')
+            return redirect(url_for('admin_dashboard'))
+        
         try:
-            pdf_io = dataframe_to_pdf_bytes(df, title='Attendance Records')
-            filename = f"{base_filename}.pdf"
-            return send_file(pdf_io, as_attachment=True, download_name=filename, mimetype='application/pdf')
-        except Exception:
-            flash('PDF export not available. Falling back to CSV.', 'warning')
-            output = io.StringIO()
-            df.to_csv(output, index=False, encoding='utf-8')
-            csv_bytes = ('\ufeff' + output.getvalue()).encode('utf-8')
-            filename = f"{base_filename}.csv"
-            return Response(csv_bytes, mimetype="text/csv; charset=utf-8",
-                            headers={"Content-Disposition": f"attachment;filename={filename}"})
+            # Create PDF
+            pdf_io = BytesIO()
+            
+            # Create document
+            doc = SimpleDocTemplate(pdf_io, pagesize=landscape(A4))
+            
+            # Create table data
+            data = [list(df.columns)]  # Header
+            for _, row in df.iterrows():
+                data.append([str(item) for item in row])
+            
+            # Create table
+            table = Table(data)
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ]))
+            
+            # Build document
+            doc.build([table])
+            pdf_io.seek(0)
+            
+            return send_file(
+                pdf_io,
+                as_attachment=True,
+                download_name=f"{base_filename}.pdf",
+                mimetype='application/pdf'
+            )
+            
+        except Exception as e:
+            flash(f'PDF export error: {str(e)}', 'error')
+            return redirect(url_for('admin_dashboard'))
     
     else:
-        flash('Unknown format', 'error')
+        flash('Unknown export format', 'error')
         return redirect(url_for('admin_dashboard'))
 
 # Debug route
