@@ -86,11 +86,9 @@
                             </td>
                             <td>
                                 <div class="text-nowrap">
-                                    <div class="fw-semibold">{{ reg.registration_time|format_datetime('%Y-%m-%d') }}</div>
-<small class="text-muted">{{ reg.registration_time|format_datetime('%H:%M:%S') }}</small>
-                                    <div class="fw-semibold">{{ reg.registration_time.strftime('%Y-%m-%d') }}</div>
-                                    <small class="text-muted">{{ reg.registration_time.strftime('%H:%M:%S') }}</small>
-                                </div>
+    <div class="fw-semibold">{{ reg.registration_time|format_datetime('%Y-%m-%d') }}</div>
+    <small class="text-muted">{{ reg.registration_time|format_datetime('%H:%M:%S') }}</small>
+</div>
                             </td>
                             <td class="text-center">
                                 <span class="badge bg-{{ 'success' if reg.attended else 'warning' }} rounded-pill py-2 px-3 attendance-badge">
