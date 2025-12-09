@@ -808,7 +808,6 @@ def export_attendance_all():
         flash('No attendance records found!', 'warning')
         return redirect(url_for('admin_dashboard'))
     
-    # Create CSV data manually (simpler approach)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     
     if fmt == 'csv':
@@ -829,7 +828,7 @@ def export_attendance_all():
                     record.get('department', ''),
                     record.get('year', ''),
                     record.get('event_title', ''),
-                    record.get('event_date', ''),
+                    str(record.get('event_date', '')),
                     str(record.get('checkin_time', '')) if record.get('checkin_time') else ''
                 ])
             
@@ -849,35 +848,30 @@ def export_attendance_all():
     
     elif fmt == 'excel':
         try:
-            # Create Excel file
-            output = BytesIO()
+            # Create Excel file using pandas (simpler)
+            import pandas as pd
+            from io import BytesIO
             
-            # Create a simple workbook
-            import openpyxl
-            from openpyxl import Workbook
-            
-            wb = Workbook()
-            ws = wb.active
-            ws.title = "Attendance"
-            
-            # Write header
-            ws.append(['Student Name', 'Student ID', 'Department', 'Year', 
-                      'Event Title', 'Event Date', 'Check-in Time'])
-            
-            # Write data
+            # Prepare data for DataFrame
+            data = []
             for record in records:
-                ws.append([
-                    record.get('name', ''),
-                    record.get('student_id', ''),
-                    record.get('department', ''),
-                    record.get('year', ''),
-                    record.get('event_title', ''),
-                    record.get('event_date', ''),
-                    str(record.get('checkin_time', '')) if record.get('checkin_time') else ''
-                ])
+                data.append({
+                    'Student Name': record.get('name', ''),
+                    'Student ID': record.get('student_id', ''),
+                    'Department': record.get('department', ''),
+                    'Year': record.get('year', ''),
+                    'Event Title': record.get('event_title', ''),
+                    'Event Date': str(record.get('event_date', '')),
+                    'Check-in Time': str(record.get('checkin_time', '')) if record.get('checkin_time') else ''
+                })
             
-            # Save to BytesIO
-            wb.save(output)
+            df = pd.DataFrame(data)
+            
+            # Create Excel in memory
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Attendance')
+            
             output.seek(0)
             
             return send_file(
@@ -893,94 +887,86 @@ def export_attendance_all():
     
     elif fmt == 'pdf':
         try:
-            # Simple PDF generation without reportlab
-            # Create HTML table and convert to PDF using weasyprint if available
-            try:
-                from weasyprint import HTML
-                import tempfile
-                
-                # Create HTML table
-                html_content = """
-                <html>
-                <head>
-                    <style>
-                        body { font-family: Arial, sans-serif; margin: 20px; }
-                        h1 { color: #333; text-align: center; }
-                        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                        th { background-color: #f2f2f2; padding: 8px; text-align: left; border: 1px solid #ddd; }
-                        td { padding: 8px; text-align: left; border: 1px solid #ddd; }
-                    </style>
-                </head>
-                <body>
-                    <h1>Attendance Records</h1>
-                    <table>
-                        <tr>
-                            <th>Student Name</th>
-                            <th>Student ID</th>
-                            <th>Department</th>
-                            <th>Year</th>
-                            <th>Event Title</th>
-                            <th>Event Date</th>
-                            <th>Check-in Time</th>
-                        </tr>
-                """
-                
-                for record in records:
-                    html_content += f"""
-                        <tr>
-                            <td>{record.get('name', '')}</td>
-                            <td>{record.get('student_id', '')}</td>
-                            <td>{record.get('department', '')}</td>
-                            <td>{record.get('year', '')}</td>
-                            <td>{record.get('event_title', '')}</td>
-                            <td>{record.get('event_date', '')}</td>
-                            <td>{str(record.get('checkin_time', '')) if record.get('checkin_time') else ''}</td>
-                        </tr>
-                    """
-                
-                html_content += """
-                    </table>
-                </body>
-                </html>
-                """
-                
-                # Generate PDF
-                pdf_bytes = HTML(string=html_content).write_pdf()
-                
-                # Create response
-                response = Response(
-                    pdf_bytes,
-                    mimetype="application/pdf",
-                    headers={
-                        "Content-Disposition": f"attachment;filename=attendance_{timestamp}.pdf"
-                    }
-                )
-                return response
-                
-            except ImportError:
-                # If weasyprint is not available, create a simple text file
-                output = io.StringIO()
-                output.write("Attendance Records\n")
-                output.write("=" * 80 + "\n\n")
-                
-                for record in records:
-                    output.write(f"Student: {record.get('name', '')} ({record.get('student_id', '')})\n")
-                    output.write(f"Department: {record.get('department', '')}, Year: {record.get('year', '')}\n")
-                    output.write(f"Event: {record.get('event_title', '')} on {record.get('event_date', '')}\n")
-                    output.write(f"Check-in: {str(record.get('checkin_time', '')) if record.get('checkin_time') else 'Not checked in'}\n")
-                    output.write("-" * 80 + "\n")
-                
-                response = Response(
-                    output.getvalue(),
-                    mimetype="text/plain",
-                    headers={
-                        "Content-Disposition": f"attachment;filename=attendance_{timestamp}.txt"
-                    }
-                )
-                return response
-                
+            # Create PDF using reportlab
+            from reportlab.lib.pagesizes import letter, landscape
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.lib.styles import getSampleStyleSheet
+            from reportlab.lib import colors
+            
+            # Create PDF in memory
+            pdf_io = BytesIO()
+            
+            # Use landscape for better table fit
+            doc = SimpleDocTemplate(pdf_io, pagesize=landscape(letter), 
+                                   leftMargin=20, rightMargin=20,
+                                   topMargin=30, bottomMargin=30)
+            
+            # Create elements
+            elements = []
+            
+            # Add title
+            styles = getSampleStyleSheet()
+            title = Paragraph(f"Attendance Report - {datetime.now().strftime('%Y-%m-%d %H:%M')}", styles['Title'])
+            elements.append(title)
+            elements.append(Spacer(1, 20))
+            
+            # Prepare table data
+            table_data = [['Student Name', 'Student ID', 'Department', 'Year', 'Event', 'Date', 'Check-in Time']]
+            
+            for record in records:
+                table_data.append([
+                    record.get('name', ''),
+                    record.get('student_id', ''),
+                    record.get('department', ''),
+                    record.get('year', ''),
+                    record.get('event_title', ''),
+                    str(record.get('event_date', '')),
+                    str(record.get('checkin_time', '')) if record.get('checkin_time') else ''
+                ])
+            
+            # Create table with column widths
+            col_widths = [80, 60, 60, 30, 100, 60, 80]
+            table = Table(table_data, colWidths=col_widths, repeatRows=1)
+            
+            # Style the table
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            
+            elements.append(table)
+            
+            # Add footer
+            elements.append(Spacer(1, 20))
+            footer = Paragraph(f"Total Records: {len(records)}", styles['Normal'])
+            elements.append(footer)
+            
+            # Build PDF
+            doc.build(elements)
+            pdf_io.seek(0)
+            
+            return send_file(
+                pdf_io,
+                as_attachment=True,
+                download_name=f"attendance_{timestamp}.pdf",
+                mimetype='application/pdf'
+            )
+            
+        except ImportError as e:
+            flash('PDF export requires ReportLab library. Please install: pip install reportlab', 'error')
+            return redirect(url_for('admin_dashboard'))
         except Exception as e:
-            flash(f'PDF export error: {str(e)}', 'error')
+            flash(f'PDF generation failed: {str(e)}', 'error')
             return redirect(url_for('admin_dashboard'))
     
     else:
