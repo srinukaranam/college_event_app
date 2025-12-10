@@ -85,27 +85,23 @@
                                 </div>
                             </td>
                             <td>
-                                <div class="text-nowrap">
-    <div class="fw-semibold">{{ reg.registration_time|format_datetime('%Y-%m-%d') }}</div>
-    <small class="text-muted">{{ reg.registration_time|format_datetime('%H:%M:%S') }}</small>
-</div>
-                            </td>
-                            <td class="text-center">
-                                <span class="badge bg-{{ 'success' if reg.attended else 'warning' }} rounded-pill py-2 px-3 attendance-badge">
-                                    <i class="fas fa-{{ 'check' if reg.attended else 'clock' }} me-1"></i>
-                                    {{ 'Attended' if reg.attended else 'Pending' }}
-                                </span>
-                            </td>
-                            <td class="text-center">
-                                <div class="btn-group btn-group-sm">
-                                    <button class="btn btn-outline-success" data-bs-toggle="tooltip" title="Mark as Attended" onclick="setAttendance('{{ reg.student_id }}', {{ event.id }}, true, this)">
-                                        <i class="fas fa-check"></i>
-                                    </button>
-                                    <button class="btn btn-outline-warning" data-bs-toggle="tooltip" title="Mark as Not Attended" onclick="setAttendance('{{ reg.student_id }}', {{ event.id }}, false, this)">
-                                        <i class="fas fa-times"></i>
-                                    </button>
-                                </div>
-                            </td>
+    <div class="text-nowrap">
+        <div class="fw-semibold">
+            {% if reg.registration_time %}
+                {{ reg.registration_time|format_datetime('%Y-%m-%d') }}
+            {% else %}
+                N/A
+            {% endif %}
+        </div>
+        <small class="text-muted">
+            {% if reg.registration_time %}
+                {{ reg.registration_time|format_datetime('%H:%M:%S') }}
+            {% else %}
+                --
+            {% endif %}
+        </small>
+    </div>
+</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -238,15 +234,33 @@ function setAttendance(studentId, eventId, attended, btn) {
       });
 }
 
-function showToast(message, type) {
+function showToast(message, type = 'info') {
+    // Remove any existing toasts
+    document.querySelectorAll('.alert-toast').forEach(toast => toast.remove());
+    
     const toast = document.createElement('div');
-    toast.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
-    toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 200px;';
-    toast.innerHTML = `${message} <button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+    toast.className = `alert alert-${type} alert-dismissible fade show alert-toast`;
+    toast.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999; min-width: 250px;';
+    
+    toast.innerHTML = `
+        <div class="d-flex align-items-center">
+            <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'danger' ? 'exclamation-circle' : 'info-circle'} me-2"></i>
+            <div class="flex-grow-1">${message}</div>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    
     document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
+    
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+        if (toast.parentNode) {
+            toast.remove();
+        }
+    }, 5000);
 }
 
+// Download helper using fetch -> blob, with modal progress simulation
 // Download helper using fetch -> blob, with modal progress simulation
 function downloadExport(eventId, format) {
     const attendanceOnly = document.getElementById('attendanceOnlyToggle').checked;
@@ -261,7 +275,7 @@ function downloadExport(eventId, format) {
     txt.textContent = 'Preparing your export...';
     modal.show();
 
-    // Simulate progress while we wait (since server won't send progress)
+    // Simulate progress
     let progress = 0;
     const simInterval = setInterval(() => {
         progress = Math.min(progress + Math.random() * 20, 95);
@@ -272,19 +286,32 @@ function downloadExport(eventId, format) {
     fetch(url, { method: 'GET' })
     .then(async resp => {
         clearInterval(simInterval);
-        // read blob
-        const blob = await resp.blob();
-        // determine filename from Content-Disposition
+        
+        if (!resp.ok) {
+            throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
+        }
+        
+        // Get filename from Content-Disposition header or generate one
         let filename = '';
         const cd = resp.headers.get('Content-Disposition');
-        if (cd && cd.indexOf('filename=') !== -1) {
+        if (cd && cd.includes('filename=')) {
             filename = cd.split('filename=')[1].replace(/['"]/g, '').trim();
         } else {
-            // fallback
-            filename = `export_${Date.now()}.${format === 'excel' ? 'xlsx' : (format === 'pdf' ? 'pdf' : 'csv')}`;
+            // Fallback filename
+            const eventTitle = document.querySelector('h1')?.textContent || 'event';
+            const safeTitle = eventTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            filename = `${safeTitle}_${Date.now()}.${format}`;
         }
-
-        // create temporary link to download blob
+        
+        // Get blob
+        const blob = await resp.blob();
+        
+        // Check if blob is valid
+        if (blob.size === 0) {
+            throw new Error('Empty file received');
+        }
+        
+        // Create download link
         const blobUrl = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = blobUrl;
@@ -294,16 +321,25 @@ function downloadExport(eventId, format) {
         a.remove();
         window.URL.revokeObjectURL(blobUrl);
 
-        document.getElementById('exportProgressBar').style.width = '100%';
-        document.getElementById('exportProgressText').textContent = 'Download started';
+        // Update progress bar
+        bar.style.width = '100%';
+        txt.textContent = 'Download started!';
         setTimeout(() => modal.hide(), 700);
+        
+        // Show success toast
+        showToast('Export downloaded successfully!', 'success');
     })
     .catch(err => {
         clearInterval(simInterval);
-        console.error('Export failed', err);
-        document.getElementById('exportProgressText').textContent = 'Export failed';
-        setTimeout(() => modal.hide(), 900);
-        showToast('Export failed. See console for details.', 'danger');
+        console.error('Export failed:', err);
+        txt.textContent = 'Export failed!';
+        bar.style.backgroundColor = '#dc3545';
+        setTimeout(() => {
+            modal.hide();
+            // Reset bar color
+            bar.style.backgroundColor = '';
+        }, 1500);
+        showToast(`Export failed: ${err.message}`, 'danger');
     });
 }
 </script>

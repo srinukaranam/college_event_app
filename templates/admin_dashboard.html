@@ -170,6 +170,8 @@
         <div class="col-xl-4">
             <!-- In admin_dashboard.html, replace the Quick Actions section with: -->
 
+<!-- In the Quick Actions section, replace with: -->
+
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-header bg-transparent border-0 py-3">
         <h5 class="mb-0"><i class="fas fa-bolt me-2 text-warning"></i>Quick Actions</h5>
@@ -183,25 +185,34 @@
                 <i class="fas fa-calendar me-2"></i>Manage Events
             </a>
             
-            <!-- Export buttons with format selection -->
-            <div class="btn-group w-100">
-                <button type="button" class="btn btn-outline-info dropdown-toggle" data-bs-toggle="dropdown">
+            <!-- Enhanced Export Button -->
+            <div class="dropdown">
+                <button class="btn btn-outline-info dropdown-toggle w-100" type="button" 
+                        data-bs-toggle="dropdown" aria-expanded="false">
                     <i class="fas fa-download me-2"></i>Export Attendance
                 </button>
                 <ul class="dropdown-menu w-100">
+                    <li><h6 class="dropdown-header">Export All Attendance</h6></li>
                     <li>
                         <a class="dropdown-item" href="{{ url_for('export_attendance_all') }}?format=csv">
-                            <i class="fas fa-file-csv me-2"></i>CSV Format
+                            <i class="fas fa-file-csv text-success me-2"></i>CSV Format
                         </a>
                     </li>
                     <li>
                         <a class="dropdown-item" href="{{ url_for('export_attendance_all') }}?format=excel">
-                            <i class="fas fa-file-excel me-2"></i>Excel Format
+                            <i class="fas fa-file-excel text-success me-2"></i>Excel Format
                         </a>
                     </li>
                     <li>
                         <a class="dropdown-item" href="{{ url_for('export_attendance_all') }}?format=pdf">
-                            <i class="fas fa-file-pdf me-2"></i>PDF Format
+                            <i class="fas fa-file-pdf text-danger me-2"></i>PDF Format
+                        </a>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><h6 class="dropdown-header">Quick Stats</h6></li>
+                    <li>
+                        <a class="dropdown-item disabled">
+                            <small>Total Records: {{ total_registrations }}</small>
                         </a>
                     </li>
                 </ul>

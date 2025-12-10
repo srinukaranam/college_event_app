@@ -1,6 +1,5 @@
 import csv
 import io
-import json
 import os
 import traceback
 import psycopg2
@@ -19,7 +18,7 @@ import pandas as pd
 # Optional PDF library
 try:
     from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.pagesizes import letter, landscape, A4
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
     from reportlab.lib.styles import getSampleStyleSheet
     REPORTLAB_AVAILABLE = True
@@ -44,7 +43,6 @@ def format_date_filter(value, format_str='%Y-%m-%d'):
         return value.strftime(format_str)
     elif isinstance(value, str):
         try:
-            # Try to parse string date
             date_obj = datetime.strptime(value, '%Y-%m-%d')
             return date_obj.strftime(format_str)
         except:
@@ -58,7 +56,6 @@ def format_datetime_filter(value, format_str='%Y-%m-%d %H:%M:%S'):
         return value.strftime(format_str)
     elif isinstance(value, str):
         try:
-            # Try to parse string datetime
             if ' ' in value:
                 dt_obj = datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
             else:
@@ -100,7 +97,7 @@ def inject_datetime():
     return {'datetime': datetime}
 
 # -----------------------
-# Database Configuration with SSL for Render
+# Database Configuration
 # -----------------------
 def get_db_connection():
     """Get PostgreSQL database connection from Render"""
@@ -110,12 +107,10 @@ def get_db_connection():
         print("WARNING: DATABASE_URL not set.")
         return None
     
-    # Fix URL format for SQLAlchemy/Render
     if database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql://", 1)
     
     try:
-        # Add SSL requirement for Render PostgreSQL
         conn = psycopg2.connect(database_url, sslmode='require')
         print("✅ Connected to PostgreSQL successfully")
         return conn
@@ -161,7 +156,7 @@ def execute_query(query, params=(), fetch=False, fetchall=False):
             conn.close()
 
 # -----------------------
-# Check and Initialize Database
+# Database Initialization
 # -----------------------
 def check_and_init_database():
     """Check if database tables exist, create if not"""
@@ -266,6 +261,7 @@ def check_and_init_database():
 print("🚀 Starting application...")
 with app.app_context():
     check_and_init_database()
+
 
 # -----------------------
 # Basic pages & auth flows
@@ -787,131 +783,291 @@ def event_registrations(event_id):
 
 @app.route('/admin/export/attendance_all')
 def export_attendance_all():
+    """Enhanced export function for attendance records"""
     if 'admin_id' not in session:
         return redirect(url_for('admin_login'))
 
     fmt = request.args.get('format', 'csv').lower()
     
-    # Fetch all attendance records
-    query = """SELECT r.*, s.name, s.student_id, s.department, s.year, 
-                      e.title as event_title, e.date as event_date,
-                      r.checkin_time
-               FROM registrations r
-               JOIN students s ON r.student_id = s.id
-               JOIN events e ON r.event_id = e.id
-               WHERE r.attended = TRUE
-               ORDER BY r.checkin_time DESC"""
-    
-    records = execute_query(query, fetchall=True) or []
+    # Fetch all attendance records with proper error handling
+    try:
+        query = """SELECT 
+                s.name as student_name,
+                s.student_id,
+                s.department,
+                s.year,
+                e.title as event_title,
+                TO_CHAR(e.date, 'YYYY-MM-DD') as event_date,
+                e.time as event_time,
+                e.venue,
+                TO_CHAR(r.checkin_time, 'YYYY-MM-DD HH24:MI:SS') as checkin_time,
+                TO_CHAR(r.registration_time, 'YYYY-MM-DD HH24:MI:SS') as registration_time
+            FROM registrations r
+            JOIN students s ON r.student_id = s.id
+            JOIN events e ON r.event_id = e.id
+            WHERE r.attended = TRUE
+            ORDER BY r.checkin_time DESC"""
+        
+        records = execute_query(query, fetchall=True) or []
 
-    if not records:
-        flash('No attendance records found!', 'warning')
+        if not records:
+            flash('No attendance records found!', 'warning')
+            return redirect(url_for('admin_dashboard'))
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"attendance_export_{timestamp}"
+        
+        # CSV Export
+        if fmt == 'csv':
+            return export_csv(records, filename)
+        
+        # Excel Export
+        elif fmt == 'excel':
+            return export_excel(records, filename)
+        
+        # PDF Export
+        elif fmt == 'pdf':
+            return export_pdf(records, filename)
+        
+        else:
+            flash('Unknown export format. Using CSV.', 'warning')
+            return export_csv(records, filename)
+            
+    except Exception as e:
+        flash(f'Export error: {str(e)}', 'error')
         return redirect(url_for('admin_dashboard'))
+
+# -----------------------
+# Export Event Registrations
+# -----------------------
+@app.route('/admin/event_registrations_export/<int:event_id>')
+def event_registrations_export(event_id):
+    """Export registrations for a specific event"""
+    if 'admin_id' not in session:
+        return redirect(url_for('admin_login'))
     
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    fmt = request.args.get('format', 'csv').lower()
+    attendance_only = request.args.get('attendance_only', '0') == '1'
     
-    if fmt == 'csv':
-        try:
-            # Create CSV in memory
-            output = io.StringIO()
-            writer = csv.writer(output)
+    try:
+        # Fetch event details
+        event = execute_query(
+            "SELECT * FROM events WHERE id = %s",
+            (event_id,), fetch=True
+        )
+        
+        if not event:
+            flash('Event not found!', 'error')
+            return redirect(url_for('admin_events'))
+        
+        # Build query based on attendance filter
+        if attendance_only:
+            query = """SELECT 
+                    s.name, s.student_id, s.department, s.year,
+                    TO_CHAR(r.registration_time, 'YYYY-MM-DD HH24:MI:SS') as registration_time,
+                    TO_CHAR(r.checkin_time, 'YYYY-MM-DD HH24:MI:SS') as checkin_time,
+                    r.attended
+                FROM registrations r
+                JOIN students s ON r.student_id = s.id
+                WHERE r.event_id = %s AND r.attended = TRUE
+                ORDER BY r.checkin_time DESC"""
+        else:
+            query = """SELECT 
+                    s.name, s.student_id, s.department, s.year,
+                    TO_CHAR(r.registration_time, 'YYYY-MM-DD HH24:MI:SS') as registration_time,
+                    TO_CHAR(r.checkin_time, 'YYYY-MM-DD HH24:MI:SS') as checkin_time,
+                    r.attended
+                FROM registrations r
+                JOIN students s ON r.student_id = s.id
+                WHERE r.event_id = %s
+                ORDER BY r.registration_time DESC"""
+        
+        records = execute_query(query, (event_id,), fetchall=True) or []
+        
+        if not records:
+            flash(f'No records found for {event["title"]}!', 'warning')
+            return redirect(url_for('event_registrations', event_id=event_id))
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        safe_title = "".join(c for c in event['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        filename = f"{safe_title}_registrations_{timestamp}"
+        
+        if fmt == 'csv':
+            return export_event_csv(records, event, filename)
+        elif fmt == 'excel':
+            return export_event_excel(records, event, filename)
+        elif fmt == 'pdf':
+            return export_event_pdf(records, event, filename)
+        else:
+            return export_event_csv(records, event, filename)
             
-            # Write header
-            writer.writerow(['Student Name', 'Student ID', 'Department', 'Year', 
-                            'Event Title', 'Event Date', 'Check-in Time'])
+    except Exception as e:
+        flash(f'Export error: {str(e)}', 'error')
+        return redirect(url_for('event_registrations', event_id=event_id))
+
+def export_event_csv(records, event, filename):
+    """Export event registrations to CSV"""
+    try:
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write header
+        writer.writerow([
+            'Event:', event['title'],
+            'Date:', str(event['date']),
+            'Time:', str(event['time']),
+            'Venue:', event['venue']
+        ])
+        writer.writerow([])  # Empty row
+        writer.writerow(['Student Name', 'Student ID', 'Department', 'Year', 
+                        'Registration Time', 'Check-in Time', 'Status'])
+        
+        # Write data
+        for record in records:
+            writer.writerow([
+                record.get('name', ''),
+                record.get('student_id', ''),
+                record.get('department', ''),
+                record.get('year', ''),
+                record.get('registration_time', ''),
+                record.get('checkin_time', '') if record.get('checkin_time') else 'Not checked in',
+                'Attended' if record.get('attended') else 'Registered'
+            ])
+        
+        # Add summary
+        writer.writerow([])
+        writer.writerow(['Summary:', f'Total: {len(records)}', 
+                        f'Attended: {len([r for r in records if r.get("attended")])}',
+                        f'Pending: {len([r for r in records if not r.get("attended")])}'])
+        
+        response = Response(
+            output.getvalue(),
+            mimetype="text/csv",
+            headers={
+                "Content-Disposition": f"attachment;filename={filename}.csv"
+            }
+        )
+        return response
+        
+    except Exception as e:
+        flash(f'CSV export error: {str(e)}', 'error')
+        return redirect(url_for('event_registrations', event_id=event['id']))
+
+def export_event_excel(records, event, filename):
+    """Export event registrations to Excel"""
+    try:
+        # Prepare data
+        data = []
+        for record in records:
+            data.append({
+                'Student Name': record.get('name', ''),
+                'Student ID': record.get('student_id', ''),
+                'Department': record.get('department', ''),
+                'Year': record.get('year', ''),
+                'Registration Time': record.get('registration_time', ''),
+                'Check-in Time': record.get('checkin_time', '') if record.get('checkin_time') else 'Not checked in',
+                'Status': 'Attended' if record.get('attended') else 'Registered'
+            })
+        
+        df = pd.DataFrame(data)
+        
+        # Create Excel in memory
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # Write event info
+            event_info = pd.DataFrame({
+                'Event Information': [
+                    f"Event: {event['title']}",
+                    f"Date: {event['date']}",
+                    f"Time: {event['time']}",
+                    f"Venue: {event['venue']}",
+                    f"Organizer: {event['organizer']}",
+                    f"Capacity: {event['capacity']}",
+                    f"Total Registrations: {len(records)}",
+                    f"Attended: {len([r for r in records if r.get('attended')])}",
+                    f"Pending: {len([r for r in records if not r.get('attended')])}"
+                ]
+            })
+            event_info.to_excel(writer, index=False, sheet_name='Event Info')
             
-            # Write data
-            for record in records:
-                writer.writerow([
-                    record.get('name', ''),
-                    record.get('student_id', ''),
-                    record.get('department', ''),
-                    record.get('year', ''),
-                    record.get('event_title', ''),
-                    str(record.get('event_date', '')),
-                    str(record.get('checkin_time', '')) if record.get('checkin_time') else ''
-                ])
+            # Write registrations
+            df.to_excel(writer, index=False, sheet_name='Registrations')
             
-            # Create response
-            response = Response(
-                output.getvalue(),
-                mimetype="text/csv",
-                headers={
-                    "Content-Disposition": f"attachment;filename=attendance_{timestamp}.csv"
-                }
-            )
-            return response
-            
-        except Exception as e:
-            flash(f'CSV export error: {str(e)}', 'error')
-            return redirect(url_for('admin_dashboard'))
+            # Auto-adjust column widths
+            for sheet_name in writer.sheets:
+                worksheet = writer.sheets[sheet_name]
+                for column in worksheet.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = min(max_length + 2, 50)
+                    worksheet.column_dimensions[column_letter].width = adjusted_width
+        
+        output.seek(0)
+        
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name=f"{filename}.xlsx",
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        
+    except Exception as e:
+        flash(f'Excel export error: {str(e)}', 'error')
+        return export_event_csv(records, event, filename)
+
+def export_event_pdf(records, event, filename):
+    """Export event registrations to PDF"""
+    if not REPORTLAB_AVAILABLE:
+        flash('PDF export requires ReportLab library', 'warning')
+        return export_event_csv(records, event, filename)
     
-    elif fmt == 'excel':
-        try:
-            # Create Excel file using pandas (simpler)
-            import pandas as pd
-            from io import BytesIO
-            
-            # Prepare data for DataFrame
-            data = []
-            for record in records:
-                data.append({
-                    'Student Name': record.get('name', ''),
-                    'Student ID': record.get('student_id', ''),
-                    'Department': record.get('department', ''),
-                    'Year': record.get('year', ''),
-                    'Event Title': record.get('event_title', ''),
-                    'Event Date': str(record.get('event_date', '')),
-                    'Check-in Time': str(record.get('checkin_time', '')) if record.get('checkin_time') else ''
-                })
-            
-            df = pd.DataFrame(data)
-            
-            # Create Excel in memory
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False, sheet_name='Attendance')
-            
-            output.seek(0)
-            
-            return send_file(
-                output,
-                as_attachment=True,
-                download_name=f"attendance_{timestamp}.xlsx",
-                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            )
-            
-        except Exception as e:
-            flash(f'Excel export error: {str(e)}. Please install openpyxl: pip install openpyxl', 'error')
-            return redirect(url_for('admin_dashboard'))
-    
-    elif fmt == 'pdf':
-        try:
-            # Create PDF using reportlab
-            from reportlab.lib.pagesizes import letter, landscape
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-            from reportlab.lib.styles import getSampleStyleSheet
-            from reportlab.lib import colors
-            
-            # Create PDF in memory
-            pdf_io = BytesIO()
-            
-            # Use landscape for better table fit
-            doc = SimpleDocTemplate(pdf_io, pagesize=landscape(letter), 
-                                   leftMargin=20, rightMargin=20,
-                                   topMargin=30, bottomMargin=30)
-            
-            # Create elements
-            elements = []
-            
-            # Add title
-            styles = getSampleStyleSheet()
-            title = Paragraph(f"Attendance Report - {datetime.now().strftime('%Y-%m-%d %H:%M')}", styles['Title'])
-            elements.append(title)
-            elements.append(Spacer(1, 20))
-            
-            # Prepare table data
-            table_data = [['Student Name', 'Student ID', 'Department', 'Year', 'Event', 'Date', 'Check-in Time']]
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import landscape, A4
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
+        
+        # Create PDF buffer
+        pdf_buffer = BytesIO()
+        
+        # Create document
+        doc = SimpleDocTemplate(
+            pdf_buffer,
+            pagesize=landscape(A4),
+            leftMargin=20,
+            rightMargin=20,
+            topMargin=30,
+            bottomMargin=30
+        )
+        
+        elements = []
+        styles = getSampleStyleSheet()
+        
+        # Add event title
+        title = Paragraph(f"<b>Event Registrations: {event['title']}</b>", styles['Heading2'])
+        elements.append(title)
+        
+        # Add event details
+        details = Paragraph(
+            f"<b>Date:</b> {event['date']} | <b>Time:</b> {event['time']} | "
+            f"<b>Venue:</b> {event['venue']} | <b>Organizer:</b> {event['organizer']}<br/>"
+            f"<b>Total Registrations:</b> {len(records)} | <b>Attended:</b> {len([r for r in records if r.get('attended')])} | "
+            f"<b>Pending:</b> {len([r for r in records if not r.get('attended')])}",
+            styles['Normal']
+        )
+        elements.append(details)
+        elements.append(Spacer(1, 20))
+        
+        # Prepare table data
+        if records:
+            table_data = [['Student Name', 'Student ID', 'Department', 'Year', 
+                          'Registration Time', 'Check-in Time', 'Status']]
             
             for record in records:
                 table_data.append([
@@ -919,23 +1075,23 @@ def export_attendance_all():
                     record.get('student_id', ''),
                     record.get('department', ''),
                     record.get('year', ''),
-                    record.get('event_title', ''),
-                    str(record.get('event_date', '')),
-                    str(record.get('checkin_time', '')) if record.get('checkin_time') else ''
+                    record.get('registration_time', ''),
+                    record.get('checkin_time', '') if record.get('checkin_time') else 'Not checked in',
+                    'Attended' if record.get('attended') else 'Registered'
                 ])
             
-            # Create table with column widths
-            col_widths = [80, 60, 60, 30, 100, 60, 80]
+            # Create table
+            col_widths = [80, 60, 60, 30, 80, 80, 50]
             table = Table(table_data, colWidths=col_widths, repeatRows=1)
             
-            # Style the table
+            # Style table
             table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, 0), 9),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
                 ('BACKGROUND', (0, 1), (-1, -1), colors.white),
                 ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
                 ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
@@ -945,33 +1101,283 @@ def export_attendance_all():
             ]))
             
             elements.append(table)
-            
-            # Add footer
-            elements.append(Spacer(1, 20))
-            footer = Paragraph(f"Total Records: {len(records)}", styles['Normal'])
-            elements.append(footer)
-            
-            # Build PDF
-            doc.build(elements)
-            pdf_io.seek(0)
-            
-            return send_file(
-                pdf_io,
-                as_attachment=True,
-                download_name=f"attendance_{timestamp}.pdf",
-                mimetype='application/pdf'
-            )
-            
-        except ImportError as e:
-            flash('PDF export requires ReportLab library. Please install: pip install reportlab', 'error')
-            return redirect(url_for('admin_dashboard'))
-        except Exception as e:
-            flash(f'PDF generation failed: {str(e)}', 'error')
-            return redirect(url_for('admin_dashboard'))
+        else:
+            elements.append(Paragraph("<i>No registrations found</i>", styles['Italic']))
+        
+        elements.append(Spacer(1, 20))
+        
+        # Add footer
+        footer = Paragraph(
+            f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
+            f"Event ID: {event['id']}",
+            styles['Normal']
+        )
+        elements.append(footer)
+        
+        # Build PDF
+        doc.build(elements)
+        pdf_buffer.seek(0)
+        
+        return send_file(
+            pdf_buffer,
+            as_attachment=True,
+            download_name=f"{filename}.pdf",
+            mimetype='application/pdf'
+        )
+        
+    except Exception as e:
+        flash(f'PDF export error: {str(e)}', 'error')
+        return export_event_csv(records, event, filename)
+
+# -----------------------
+# Mark Attendance AJAX Endpoint
+# -----------------------
+@app.route('/admin/mark_attendance', methods=['POST'])
+def mark_attendance():
+    """AJAX endpoint to mark attendance"""
+    if 'admin_id' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized'})
     
-    else:
-        flash('Unknown export format', 'error')
+    try:
+        data = request.json
+        student_id = data.get('student_id')
+        event_id = data.get('event_id')
+        attended = data.get('attended', False)
+        
+        # Get student by student_id (not id)
+        student = execute_query(
+            "SELECT id FROM students WHERE student_id = %s",
+            (student_id,), fetch=True
+        )
+        
+        if not student:
+            return jsonify({'success': False, 'message': 'Student not found'})
+        
+        # Update attendance
+        if attended:
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            execute_query(
+                "UPDATE registrations SET attended = TRUE, checkin_time = %s "
+                "WHERE student_id = %s AND event_id = %s",
+                (current_time, student['id'], event_id)
+            )
+        else:
+            execute_query(
+                "UPDATE registrations SET attended = FALSE, checkin_time = NULL "
+                "WHERE student_id = %s AND event_id = %s",
+                (student['id'], event_id)
+            )
+        
+        return jsonify({'success': True, 'message': 'Attendance updated'})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
+
+def export_csv(records, filename):
+    """Export records to CSV format"""
+    try:
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write header
+        writer.writerow([
+            'Student Name', 'Student ID', 'Department', 'Year',
+            'Event Title', 'Event Date', 'Event Time', 'Venue',
+            'Registration Time', 'Check-in Time'
+        ])
+        
+        # Write data
+        for record in records:
+            writer.writerow([
+                record.get('student_name', ''),
+                record.get('student_id', ''),
+                record.get('department', ''),
+                record.get('year', ''),
+                record.get('event_title', ''),
+                record.get('event_date', ''),
+                record.get('event_time', ''),
+                record.get('venue', ''),
+                record.get('registration_time', ''),
+                record.get('checkin_time', '')
+            ])
+        
+        # Create response
+        response = Response(
+            output.getvalue(),
+            mimetype="text/csv",
+            headers={
+                "Content-Disposition": f"attachment;filename={filename}.csv",
+                "Content-Type": "text/csv; charset=utf-8"
+            }
+        )
+        return response
+        
+    except Exception as e:
+        flash(f'CSV export error: {str(e)}', 'error')
         return redirect(url_for('admin_dashboard'))
+
+def export_excel(records, filename):
+    """Export records to Excel format"""
+    try:
+        # Prepare data for DataFrame
+        data = []
+        for record in records:
+            data.append({
+                'Student Name': record.get('student_name', ''),
+                'Student ID': record.get('student_id', ''),
+                'Department': record.get('department', ''),
+                'Year': record.get('year', ''),
+                'Event Title': record.get('event_title', ''),
+                'Event Date': record.get('event_date', ''),
+                'Event Time': str(record.get('event_time', '')),
+                'Venue': record.get('venue', ''),
+                'Registration Time': record.get('registration_time', ''),
+                'Check-in Time': record.get('checkin_time', '')
+            })
+        
+        df = pd.DataFrame(data)
+        
+        # Create Excel in memory
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Attendance')
+            # Auto-adjust column widths
+            worksheet = writer.sheets['Attendance']
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 30)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+        
+        output.seek(0)
+        
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name=f"{filename}.xlsx",
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        
+    except Exception as e:
+        flash(f'Excel export error: {str(e)}. Please install: pip install openpyxl', 'error')
+        # Fallback to CSV
+        return export_csv(records, filename)
+
+def export_pdf(records, filename):
+    """Export records to PDF format"""
+    if not REPORTLAB_AVAILABLE:
+        flash('PDF export requires ReportLab library. Please install: pip install reportlab', 'warning')
+        return export_csv(records, filename)
+    
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import landscape, A4
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
+        
+        # Create PDF in memory
+        pdf_buffer = BytesIO()
+        
+        # Create document with landscape orientation
+        doc = SimpleDocTemplate(
+            pdf_buffer,
+            pagesize=landscape(A4),
+            leftMargin=20,
+            rightMargin=20,
+            topMargin=30,
+            bottomMargin=30
+        )
+        
+        elements = []
+        styles = getSampleStyleSheet()
+        
+        # Add title
+        title = Paragraph(f"<b>Attendance Report</b><br/>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", 
+                         styles['Heading2'])
+        elements.append(title)
+        elements.append(Spacer(1, 20))
+        
+        # Prepare table data
+        table_data = [[
+            'Student Name', 'Student ID', 'Department', 'Year',
+            'Event', 'Date', 'Time', 'Venue', 'Check-in Time'
+        ]]
+        
+        for record in records:
+            table_data.append([
+                record.get('student_name', ''),
+                record.get('student_id', ''),
+                record.get('department', ''),
+                record.get('year', ''),
+                record.get('event_title', ''),
+                record.get('event_date', ''),
+                str(record.get('event_time', '')),
+                record.get('venue', ''),
+                record.get('checkin_time', '')
+            ])
+        
+        # Add summary row
+        table_data.append([
+            f"<b>Total Records: {len(records)}</b>", "", "", "", "", "", "", "", ""
+        ])
+        
+        # Create table with optimized column widths
+        col_widths = [70, 50, 50, 30, 100, 50, 40, 60, 70]
+        table = Table(table_data, colWidths=col_widths, repeatRows=1)
+        
+        # Apply table styles
+        table.setStyle(TableStyle([
+            # Header style
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            
+            # Data rows style
+            ('BACKGROUND', (0, 1), (-1, -2), colors.white),
+            ('TEXTCOLOR', (0, 1), (-1, -2), colors.black),
+            ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -2), 8),
+            ('ALIGN', (0, 1), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            
+            # Grid lines
+            ('GRID', (0, 0), (-1, -2), 0.5, colors.grey),
+            
+            # Summary row style
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#ecf0f1')),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, -1), (-1, -1), 9),
+            ('ALIGN', (0, -1), (-1, -1), 'LEFT'),
+        ]))
+        
+        elements.append(table)
+        elements.append(Spacer(1, 20))
+        
+        # Build PDF
+        doc.build(elements)
+        pdf_buffer.seek(0)
+        
+        return send_file(
+            pdf_buffer,
+            as_attachment=True,
+            download_name=f"{filename}.pdf",
+            mimetype='application/pdf'
+        )
+        
+    except Exception as e:
+        flash(f'PDF export error: {str(e)}', 'error')
+        # Fallback to CSV
+        return export_csv(records, filename)
+
 
 # Debug route
 @app.route('/debug/db')
@@ -1062,6 +1468,7 @@ def dataframe_to_csv_bytes(df):
     df.to_csv(output, index=False, encoding='utf-8')
     output.seek(0)
     return output.getvalue()
+
 
 # Logout routes
 @app.route('/logout')
