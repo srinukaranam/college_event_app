@@ -137,6 +137,22 @@
         </div>
     </div>
 
+    <!-- Simple direct download links (fallback) -->
+<div class="mt-3 text-center">
+    <small class="text-muted">Or download directly:</small>
+    <div class="mt-2">
+        <a href="/admin/export/event/{{ event.id }}?format=csv" class="btn btn-sm btn-outline-primary me-1">
+            <i class="fas fa-file-csv me-1"></i>CSV
+        </a>
+        <a href="/admin/export/event/{{ event.id }}?format=excel" class="btn btn-sm btn-outline-success me-1">
+            <i class="fas fa-file-excel me-1"></i>Excel
+        </a>
+        <a href="/admin/export/event/{{ event.id }}?format=pdf" class="btn btn-sm btn-outline-danger">
+            <i class="fas fa-file-pdf me-1"></i>PDF
+        </a>
+    </div>
+</div>
+
     {% else %}
     <div class="card border-0 shadow-sm">
         <div class="card-body text-center py-5">
@@ -262,15 +278,23 @@ function showToast(message, type = 'info') {
 
 // Download helper using fetch -> blob, with modal progress simulation
 // Download helper using fetch -> blob, with modal progress simulation
+// Download helper using fetch -> blob, with modal progress simulation
 function downloadExport(eventId, format) {
-    const attendanceOnly = document.getElementById('attendanceOnlyToggle').checked;
-    const url = `/admin/event_registrations_export/${eventId}?format=${format}${attendanceOnly ? '&attendance_only=1' : ''}`;
+    const attendanceOnly = document.getElementById('attendanceOnlyToggle')?.checked || false;
+    const url = `/admin/export/event/${eventId}?format=${format}${attendanceOnly ? '&attendance_only=1' : ''}`;
 
     // Show modal
     const modalEl = document.getElementById('exportProgressModal');
     const modal = new bootstrap.Modal(modalEl);
     const bar = document.getElementById('exportProgressBar');
     const txt = document.getElementById('exportProgressText');
+    
+    if (!modalEl || !bar || !txt) {
+        // Fallback if modal doesn't exist
+        window.location.href = url;
+        return;
+    }
+    
     bar.style.width = '0%';
     txt.textContent = 'Preparing your export...';
     modal.show();
@@ -278,68 +302,89 @@ function downloadExport(eventId, format) {
     // Simulate progress
     let progress = 0;
     const simInterval = setInterval(() => {
-        progress = Math.min(progress + Math.random() * 20, 95);
+        progress = Math.min(progress + Math.random() * 20, 90);
         bar.style.width = progress + '%';
         txt.textContent = `Preparing... ${Math.floor(progress)}%`;
-    }, 350);
+    }, 300);
 
-    fetch(url, { method: 'GET' })
-    .then(async resp => {
+    // Simple fetch with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+    fetch(url, { 
+        method: 'GET',
+        signal: controller.signal
+    })
+    .then(async response => {
         clearInterval(simInterval);
+        clearTimeout(timeoutId);
         
-        if (!resp.ok) {
-            throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
+        if (!response.ok) {
+            throw new Error(`Server returned ${response.status}: ${response.statusText}`);
         }
         
-        // Get filename from Content-Disposition header or generate one
+        // Get the blob
+        const blob = await response.blob();
+        
+        // Check if blob is empty
+        if (blob.size === 0) {
+            throw new Error('Empty file received from server');
+        }
+        
+        // Get filename from headers or generate one
         let filename = '';
-        const cd = resp.headers.get('Content-Disposition');
-        if (cd && cd.includes('filename=')) {
-            filename = cd.split('filename=')[1].replace(/['"]/g, '').trim();
+        const contentDisposition = response.headers.get('Content-Disposition');
+        if (contentDisposition && contentDisposition.includes('filename=')) {
+            filename = contentDisposition.split('filename=')[1].replace(/["']/g, '');
         } else {
-            // Fallback filename
+            // Generate filename
             const eventTitle = document.querySelector('h1')?.textContent || 'event';
             const safeTitle = eventTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            filename = `${safeTitle}_${Date.now()}.${format}`;
-        }
-        
-        // Get blob
-        const blob = await resp.blob();
-        
-        // Check if blob is valid
-        if (blob.size === 0) {
-            throw new Error('Empty file received');
+            const extension = format === 'excel' ? 'xlsx' : format === 'pdf' ? 'pdf' : 'csv';
+            filename = `${safeTitle}_export.${extension}`;
         }
         
         // Create download link
-        const blobUrl = window.URL.createObjectURL(blob);
+        const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = blobUrl;
+        a.href = url;
         a.download = filename;
         document.body.appendChild(a);
         a.click();
-        a.remove();
-        window.URL.revokeObjectURL(blobUrl);
-
-        // Update progress bar
-        bar.style.width = '100%';
-        txt.textContent = 'Download started!';
-        setTimeout(() => modal.hide(), 700);
         
-        // Show success toast
-        showToast('Export downloaded successfully!', 'success');
-    })
-    .catch(err => {
-        clearInterval(simInterval);
-        console.error('Export failed:', err);
-        txt.textContent = 'Export failed!';
-        bar.style.backgroundColor = '#dc3545';
+        // Cleanup
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        // Update progress bar to 100%
+        bar.style.width = '100%';
+        txt.textContent = 'Download complete!';
+        
+        // Hide modal after a delay
         setTimeout(() => {
             modal.hide();
+            showToast(`Export downloaded successfully as ${format.toUpperCase()}!`, 'success');
+        }, 1000);
+        
+    })
+    .catch(error => {
+        clearInterval(simInterval);
+        clearTimeout(timeoutId);
+        
+        console.error('Export error:', error);
+        
+        // Update modal to show error
+        bar.style.width = '100%';
+        bar.style.backgroundColor = '#dc3545';
+        txt.textContent = 'Export failed!';
+        
+        // Hide modal after delay and show error
+        setTimeout(() => {
+            modal.hide();
+            showToast(`Export failed: ${error.message}`, 'danger');
             // Reset bar color
             bar.style.backgroundColor = '';
-        }, 1500);
-        showToast(`Export failed: ${err.message}`, 'danger');
+        }, 2000);
     });
 }
 </script>
