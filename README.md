@@ -41,7 +41,7 @@ Admins can manage events, view registrations, track attendance, and export repor
 | Layer | Technology |
 |------|------------|
 | Backend | Python Flask |
-| Database | SQLite3 |
+| Database | PostgreSQL |
 | Frontend | HTML, CSS, JavaScript, Bootstrap |
 | QR Code | `qrcode` Python library |
 | Export | Pandas, OpenPyXL, ReportLab |
